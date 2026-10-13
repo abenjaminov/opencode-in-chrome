@@ -105,6 +105,36 @@ Use the command printed by setup instead of copying these illustrative paths. Ve
 
 The registration is project-local: all conversations in that configured project can use the browser tools. One bridge process per port is supported. Concurrent bridge instances in different project locations need separate ports/configurations; global registration is not a shared-daemon setup.
 
+### Use Chrome in a new session or project
+
+**New conversation in the same project:** open `/mcps`, confirm `chrome` is connected, and check that the extension popup says **Ready — sessions can open tabs**. Then ask: “Use the Chrome MCP to open a new tab, visit example.com, and summarize the page.” Each conversation creates its own tabs automatically; pairing is not repeated per session.
+
+**Another project:** setup and registration run in different directories:
+
+```powershell
+# 1. Extension repository: generate/preserve pairing settings.
+cd C:\path\to\opencode-in-chrome
+npm.cmd run setup
+
+# 2. Target project: register the bridge for conversations in this project.
+cd C:\path\to\your-project
+# Run the exact opencode mcp add chrome command printed by setup here.
+opencode mcp list
+```
+
+If `npm run setup` reports **Missing script: "setup"**, you are likely in the target application instead of the extension repository. The application does not need its own setup script.
+
+When switching projects using the same port, first disconnect `chrome` in the **old project's** `/mcps` interface, then connect it in the **new project's** `/mcps` interface. Closing a conversation or terminal is not a reliable way to stop its bridge: the OpenCode background service can keep the process running. Disconnecting the old project's bridge also removes browser access for its other conversations.
+
+**Current concurrency boundary:** multiple sessions within one configured project share one bridge and work with separate owned tabs. Different projects can start independent bridge processes, which cannot listen on the same port. A single installed extension connects to only one bridge at a time; separate ports alone do not make one extension serve multiple projects simultaneously. Independent simultaneous setups require separate checkouts/configurations, ports, and paired extension instances in separate Chrome profiles. Global MCP registration makes the server available across projects but does not turn it into a shared daemon.
+
+There are two readiness checks:
+
+1. `opencode mcp list` shows **chrome connected**: OpenCode can communicate with the Node MCP bridge.
+2. The extension popup shows **Ready — sessions can open tabs**: Chrome is authenticated to that bridge and browser access is enabled.
+
+MCP can be connected while Chrome is disconnected or disabled. Check both before expecting browser actions to work.
+
 ## One-time Chrome setup
 
 1. Create or select a **dedicated automation Chrome profile**, then open `chrome://extensions` and enable **Developer mode**.
@@ -177,20 +207,41 @@ Tabs opened by links/popups from an owned tab inherit that session's ownership. 
 
 ## Troubleshooting
 
-| Symptom                                              | Next step                                                                                                                                |
-| ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| Bridge disconnected                                  | Check `opencode mcp list`, configured port, and extension popup connection status. Have the user verify pairing locally.                 |
-| Browser disabled / old extension                     | Have the user reload at `chrome://extensions` and choose **Save & enable browser** in the popup.                                         |
-| Tool missing                                         | Verify MCP registration in the calling session's project; reconnect `chrome` in OpenCode's `/mcps` interface.                            |
-| Tab not owned                                        | Call `list_tabs` and use a returned `id`, or create a new tab with `open_tab`. Do not target a personal tab.                             |
-| Page changed / ref expired                           | Call `read_page` again and choose a new ref from that snapshot.                                                                          |
-| Page still loading                                   | Retry `read_page` after navigation has had time to finish. Do not repeat the preceding submission.                                       |
-| Timeout / cancellation / disconnect during an action | Reconnect if necessary, list owned tabs, then inspect the page before deciding whether another action is needed.                         |
-| Missing session metadata                             | Use the tools through an OpenCode conversation. Other MCP clients must integrate real session metadata; tool arguments cannot supply it. |
-| Element not editable / option not found              | Inspect a fresh snapshot and use the tool matching the control's tag/type and option value.                                              |
-| Protected page / iframe / synthetic input rejected   | This tool set may not support the interaction; explain the limitation rather than claiming success.                                      |
+| Symptom                                              | Next step                                                                                                                                                                                                    |
+| ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Bridge disconnected                                  | Check `opencode mcp list`, configured port, and extension popup connection status. Have the user verify pairing locally.                                                                                     |
+| `chrome: Connection closed` in OpenCode              | The MCP bridge may have exited during startup. Check for another bridge using the same port, missing setup/configuration, dependencies, or an incorrect Node/bridge path. See the port-conflict steps below. |
+| `npm run setup`: Missing script                      | Run setup from the `opencode-in-chrome` repository, not the target application. Register MCP from the target application's directory afterward.                                                              |
+| Browser disabled / old extension                     | Have the user reload at `chrome://extensions` and choose **Save & enable browser** in the popup.                                                                                                             |
+| Tool missing                                         | Verify MCP registration in the calling session's project; reconnect `chrome` in OpenCode's `/mcps` interface.                                                                                                |
+| Tab not owned                                        | Call `list_tabs` and use a returned `id`, or create a new tab with `open_tab`. Do not target a personal tab.                                                                                                 |
+| Page changed / ref expired                           | Call `read_page` again and choose a new ref from that snapshot.                                                                                                                                              |
+| Page still loading                                   | Retry `read_page` after navigation has had time to finish. Do not repeat the preceding submission.                                                                                                           |
+| Timeout / cancellation / disconnect during an action | Reconnect if necessary, list owned tabs, then inspect the page before deciding whether another action is needed.                                                                                             |
+| Missing session metadata                             | Use the tools through an OpenCode conversation. Other MCP clients must integrate real session metadata; tool arguments cannot supply it.                                                                     |
+| Element not editable / option not found              | Inspect a fresh snapshot and use the tool matching the control's tag/type and option value.                                                                                                                  |
+| Protected page / iframe / synthetic input rejected   | This tool set may not support the interaction; explain the limitation rather than claiming success.                                                                                                          |
 
 After bridge changes, reconnect `chrome` in OpenCode. After extension changes, reload it in `chrome://extensions`. If the user loaded an older checkout, update the unpacked extension path and MCP registration to this checkout.
+
+### Diagnose a port conflict on Windows
+
+A confirmed failure mode is an older project's bridge still occupying `127.0.0.1:8790`. Starting another bridge on that port fails with `EADDRINUSE`; OpenCode may display only **Connection closed**. An older checkout can cause this even when the new MCP registration is correct.
+
+In PowerShell, inspect the listener and its process (replace `8790` if you configured a different port):
+
+```powershell
+Get-NetTCPConnection -LocalPort 8790 -State Listen -ErrorAction SilentlyContinue |
+  Select-Object LocalAddress, LocalPort, OwningProcess
+
+# Substitute the OwningProcess number from the previous command.
+Get-CimInstance Win32_Process -Filter "ProcessId = <OwningProcess>" |
+  Select-Object ProcessId, CommandLine
+```
+
+If the command line identifies this project's bridge or an older checkout's `bridge/main.js`, disconnect its `chrome` MCP from the owning project's `/mcps` interface. Then reconnect `chrome` in the target project, run `opencode mcp list` there, and check the extension popup. Do not terminate an unidentified process just because it uses the port.
+
+If the port belongs to another application, choose a free port with `npm run setup -- --port 8791`, reconnect MCP, and update the extension's URL. If you also changed checkouts or tokens, load the intended checkout's `extension` folder and pair with that checkout's settings. Changing the port affects every registration pointing at that checkout's configuration.
 
 ## Verify
 
