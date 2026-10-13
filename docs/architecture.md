@@ -26,6 +26,14 @@ OpenCode conversation
 
 There is no build step, arbitrary page-evaluation tool, or conversation UI in the extension.
 
+## Installation and release tools
+
+`scripts/install.js` uses `installation.js` to validate an explicit target directory, bootstrap missing dependencies through npm, preserve local pairing settings, check conflicting listeners, and call OpenCode's registration CLI without rewriting project configuration. It copies the reusable installation skill into the target project's `.opencode/skills/` directory and refuses to overwrite a differing skill.
+
+`scripts/pair.js` creates a private local pairing page from validated configuration. It opens through the operating system's default browser launcher with no shell interpolation. The user transfers the token into Chrome directly. `scripts/doctor.js` uses `diagnostics.js` for safe human/JSON reports; it does not log response bodies, account URLs, or tokens. `bridge/listen.js` supplies actionable startup errors for occupied ports and denied listeners.
+
+`scripts/package.js` uses `archives.js` to build deterministic standalone-project and extension-only ZIPs plus checksums. A source allowlist excludes private/runtime directories; symlinks are rejected. Tagged releases run both platform checks before publication. Package/manifest/tag versions must agree.
+
 ## Connection lifecycle
 
 1. The worker restricts storage to trusted extension contexts and restores session-owned tabs from `chrome.storage.session`. It starts suspended and invalidates old generations.

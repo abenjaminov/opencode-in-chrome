@@ -13,9 +13,21 @@ Use `npm run format` to apply Prettier and `npm run lint` for ESLint. `npm run c
 
 See [architecture](docs/architecture.md) for module boundaries and connection lifecycle. To bump a release, run `npm version <version> --no-git-tag-version`, update `extension/manifest.json` to match, and add a changelog entry.
 
+## Releases
+
+1. Update package/Chrome versions together and add a matching changelog section.
+2. Run `npm ci`, `npm run check`, and `npm run package`.
+3. Review the generated source and extension ZIPs in `dist/`; they exclude local state and dependencies. Consumers run the installer to fetch locked dependencies.
+4. Merge the reviewed changes with passing CI, then push a tag matching the package version, for example `v0.4.0`.
+5. The release workflow reruns checks on Windows/Linux and publishes both ZIPs, SHA-256 checksums, and changelog notes. Do not move a published tag; release a new version for fixes.
+
+Owner-only GitHub settings are documented in [maintainer setup](docs/maintainer-setup.md). Real Chrome smoke testing remains a manual step; automatic browser testing is a future enhancement.
+
 When changing the extension, reload it at `chrome://extensions`. When changing bridge code, reconnect the `chrome` server in OpenCode's `/mcps` interface. After changing permissions, Chrome may require enabling the extension again.
 
 ## Pull requests
+
+External contributors can fork this public MIT-licensed repo, create a branch, run `npm run check`, and open a PR against `main`. A PR does not grant push or merge access. Keep changes focused and include verification evidence.
 
 - Keep browser tools limited to session-owned tabs.
 - Test changes that affect ownership, authentication, cancellation, or persistence.

@@ -1,0 +1,40 @@
+---
+name: Install OpenCode in Chrome
+description: Install, pair, diagnose, or repair the opencode-in-chrome MCP browser extension for an OpenCode project. Use when a user wants automatic session-owned Chrome tabs or sees chrome Connection closed.
+license: MIT
+---
+
+# Install OpenCode in Chrome
+
+## Outcome
+
+Register `chrome` MCP in the user's chosen project, help the user complete Chrome pairing locally, and verify both MCP and browser readiness. Keep the conversation in OpenCode. The extension has no session picker or manual tab adoption.
+
+## Workflow
+
+1. Determine the **target project directory** and a permanent **extension checkout directory**. These are different roles. Inspect existing `chrome` registration first; its `command` may identify an installed checkout. Preserve unrelated configuration and user files.
+2. Check `node --version` (24+) and `opencode --version` (V2). If missing, guide installation from `https://nodejs.org/` and `https://opencode.ai/v2/docs/`. Do not guess V1 configuration shapes.
+3. If no checkout exists, clone `https://github.com/abenjaminov/opencode-in-chrome.git` into the chosen permanent directory. Read its README and SECURITY.md. If it already exists, inspect local changes before updating it.
+4. From that checkout, run:
+
+   ```sh
+   npm run install:opencode -- --project "/absolute/path/to/target-project"
+   ```
+
+   On Windows, use `npm.cmd` if PowerShell blocks `npm`. The installer installs missing dependencies, generates/preserves private pairing settings, registers MCP through OpenCode's CLI, and copies this skill into the target project. Its output does **not** include the token. It does not add approval rules silently.
+
+5. If another bridge occupies the port, identify the owner. Have the user disconnect `chrome` in the old project's `/mcps`, then reconnect it in the target project. Do not kill an unidentified process. One extension connects to one bridge; global registration is not a shared daemon. Use `--port 8791` only when a different port is appropriate and update the popup URL.
+6. Run `npm run pair` from the checkout. This opens a **local, private pairing page**. Do not read its HTML, `.local/config.json`, or the clipboard into agent context. Do not screenshot that page. The user copies the token directly into the extension popup.
+7. Guide the user through the Chrome-only steps: dedicated profile → `chrome://extensions` → Developer mode → Load unpacked → checkout's `extension/` → popup → URL/token → Save & enable browser → website permission. Do not claim these steps completed without confirmation.
+8. Run `opencode mcp list` from the target project and `npm run doctor` from the checkout. Doctor prints only safe summaries. `--json` provides a machine-readable report; exit 0 means fully ready, exit 1 means attention needed. MCP connected is not proof Chrome is paired/enabled.
+9. Offer to merge `examples/permissions.jsonc` into existing project permissions for supervised actions. Preserve rule order and explain later-rule/saved-approval effects. Never replace the entire config with the example.
+10. Once ready, perform an authorized public-page smoke action: create a tab, read it, and report the observed result. Use actual MCP tools with OpenCode-supplied session metadata; never fabricate IDs or element refs.
+
+## Repairs
+
+- **Missing script: setup:** commands ran in the target application. Run installation/setup from the extension checkout; MCP registration belongs in the target project.
+- **Connection closed:** inspect `npm run doctor`, Node/bridge paths, dependencies, and port ownership. An older project's bridge may still run inside the OpenCode service after its terminal closes.
+- **MCP connected but Chrome disconnected:** user checks profile, unpacked extension path, URL/token locally, and permission prompt; reconnect/reload as appropriate.
+- **Timeout after an interaction:** inspect current page state before retrying; cancellation cannot undo a completed action.
+
+Read the checkout's README for exact tools and recovery commands. No build step is required. Never commit `.local/`, pairing files, private browser data, or machine-specific credentials.

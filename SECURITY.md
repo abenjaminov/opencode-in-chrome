@@ -32,6 +32,8 @@ The extension cannot reliably determine whether an arbitrary click is destructiv
 - **Cancellation propagation:** MCP cancellation and action timeouts are forwarded to the extension. Queued commands and pending pre-click animations can be cancelled. Completed actions are not reversed; Chrome API calls already in progress may still finish.
 - **Expiry/stale refs:** browser commands expire after 25 seconds; element refs are scoped to a document/snapshot and checked again before delayed interactions.
 - **Private local state:** `.local/` is ignored by Git. The bridge token and machine-specific MCP configuration must never be committed.
+- **Credential-safe onboarding:** `install:opencode` and `doctor` do not print tokens. `pair` writes an ignored, restricted local HTML page with copy/reveal controls and no remote resources. That page contains a credential; keep it out of agent reads, screenshots, and shared files. The lower-level `setup` command intentionally prints the token for manual setup.
+- **Release boundaries:** standalone and extension-only archives use an explicit source allowlist and exclude `.local/`, `node_modules/`, and Git state. Releases include checksums; verify downloads from the maintainer's repository.
 
 ## Trust boundaries and limitations
 
@@ -66,5 +68,7 @@ Then reconnect `chrome` in OpenCode's `/mcps` interface and replace the saved to
 ## Reporting vulnerabilities
 
 Report suspected vulnerabilities privately to the repository maintainer. Use GitHub's private vulnerability reporting if the repository enables it. Do not post pairing tokens, signed-in page contents, screenshots with private information, or working exploit details in a public issue before coordinating a fix.
+
+Repository admin access is required to enable private reporting; adding this file does not enable it. The owner should complete [maintainer setup](docs/maintainer-setup.md#private-vulnerability-reporting) and verify that the Security tab offers **Report a vulnerability**. Until then, establish a private channel with the maintainer rather than posting confidential details publicly.
 
 This prototype has not undergone an independent security audit. Automated tests verify the implemented boundaries; they do not establish that browser automation is safe for every account or task.

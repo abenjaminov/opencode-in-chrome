@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0
+
+- Add MIT licensing, code ownership rules, and owner instructions for protected branches and confidential vulnerability reporting.
+- Add a one-command project installer that installs missing dependencies, preserves pairing, registers MCP through OpenCode's CLI, and installs a reusable agent skill.
+- Add a private local pairing page with clipboard support; installer and diagnostics never print the pairing token.
+- Add `npm run doctor` with human-readable and JSON readiness reports, plus actionable port-conflict startup errors.
+- Publish reproducible standalone-project and extension-only ZIPs with SHA-256 checksums through tagged-release automation.
+- Add a labeled control illustration, easier onboarding, and contributor/release instructions.
+
 ## 0.3.2
 
 - Keep page controls suspended until the bridge acknowledges authentication, including pairing and reconnection.

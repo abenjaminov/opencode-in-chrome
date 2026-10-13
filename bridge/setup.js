@@ -1,25 +1,12 @@
-import { mkdir, writeFile } from 'node:fs/promises';
-import { readConfig, writeConfig, parseSetupOptions } from './config.js';
-import { randomBytes } from 'node:crypto';
+import { writeFile } from 'node:fs/promises';
+import { ensureConfig, parseSetupOptions } from './config.js';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const options = parseSetupOptions(process.argv.slice(2));
-await mkdir(path.join(root, '.local'), { recursive: true, mode: 0o700 });
 const configPath = path.join(root, '.local/config.json');
-let config;
-try {
-  config = await readConfig();
-} catch (error) {
-  if (error.code !== 'ENOENT') throw error;
-  config = { token: randomBytes(32).toString('hex'), port: 8790 };
-}
-if (options.rotateToken) {
-  config.token = randomBytes(32).toString('hex');
-}
-if (options.port !== undefined) config.port = options.port;
-await writeConfig(config);
+const config = await ensureConfig(options);
 const snippet = {
   $schema: 'https://opencode.ai/config.json',
   mcp: {

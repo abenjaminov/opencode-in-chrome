@@ -40,4 +40,10 @@ test('configuration validates credentials and restricts existing POSIX files', a
   ]) {
     assert.throws(() => validateConfig(invalid));
   }
+  await writeFile(file, '{"token":"PRIVATE-SENTINEL" broken-json');
+  await assert.rejects(readConfig(file), (error) => {
+    assert.match(error.message, /Invalid bridge settings JSON/);
+    assert.equal(error.message.includes('PRIVATE-SENTINEL'), false);
+    return true;
+  });
 });

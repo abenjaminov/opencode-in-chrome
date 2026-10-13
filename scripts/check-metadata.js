@@ -8,4 +8,5 @@ const lock = await json('../package-lock.json');
 assert.equal(manifest.version, pkg.version, 'Chrome and package versions must match');
 assert.equal(lock.version, pkg.version, 'Lockfile and package versions must match');
 assert.equal(lock.packages[''].version, pkg.version, 'Lockfile root version must match');
+assert.equal(lock.packages[''].license, pkg.license, 'Lockfile and package licenses must match');
 console.log(`Package, lockfile, and Chrome manifest agree: ${pkg.version}`);

@@ -10,17 +10,69 @@ OpenCode session → MCP stdio → localhost bridge → extension → session-ow
 
 New tabs use your normal Chrome profile and its existing logins. Cookies stay in Chrome.
 
+![Illustration of an orange session-owned tab group and independent OpenCode cursor](docs/assets/control-preview.svg)
+
+_UI illustration, not a captured browser screenshot._
+
+## Easy install (recommended)
+
+Requires Node.js 24+, Chrome 120+, and OpenCode V2 on your PATH. Choose the existing project that should get browser tools, then run:
+
+```sh
+git clone https://github.com/abenjaminov/opencode-in-chrome.git
+cd opencode-in-chrome
+npm run install:opencode -- --project "/absolute/path/to/your-project"
+npm run pair
+```
+
+Windows example:
+
+```powershell
+git clone https://github.com/abenjaminov/opencode-in-chrome.git
+cd opencode-in-chrome
+npm.cmd run install:opencode -- --project "C:\path\to\your-project"
+npm.cmd run pair
+```
+
+The installer installs missing dependencies, generates or preserves pairing settings, registers `chrome` MCP in the selected project, and copies the installation skill there. It uses OpenCode's CLI to preserve unrelated configuration. It does not print the token or silently change approval rules. Keep the checkout in a permanent location.
+
+`pair` opens a **private local page** with the URL, a token-copy button, and Chrome instructions. Complete [Chrome setup](#one-time-chrome-setup) in a dedicated profile. The local page contains credentials; keep it out of agent context and screenshots. It opens in your OS default browser, so choose the intended Chrome profile yourself. Use `npm run pair -- --no-open` to generate it without opening a browser.
+
+Then verify:
+
+```sh
+npm run doctor
+```
+
+Doctor checks Node, dependencies, configuration, the authenticated bridge, Chrome connection, and enabled state. It never prints the token or page contents. Exit `0` means fully ready; `1` means follow its diagnostic messages. For machine-readable output, run `npm run doctor -- --json` (npm may add script headers; `node scripts/doctor.js --json` outputs JSON only).
+
+If a previous project's bridge occupies the port, disconnect it in that project's `/mcps` before connecting this one. Add `--port 8791` to the installer when a separate port is appropriate. One extension instance still serves only one bridge at a time.
+
+### Ask an agent to install it
+
+This repo includes an [installation skill](.opencode/skills/install-opencode-in-chrome/SKILL.md), discovered automatically by OpenCode in this checkout. The installer also copies it into the target project. In either project, ask:
+
+> Use @install-opencode-in-chrome to set up Chrome browser tools for this project and check that they are ready.
+
+Before the skill is installed, give your agent this repository URL and ask it to read the installation skill and install for your target project. Terminal setup can be automated; selecting a Chrome profile, loading the extension, and accepting browser permissions remain user steps. The skill directs agents to keep pairing credentials out of prompts and logs.
+
+### Install a stable release
+
+Download the full `opencode-in-chrome-<version>.zip` from [Releases](https://github.com/abenjaminov/opencode-in-chrome/releases), extract it to a permanent directory, and run the same installer/pair commands inside its `opencode-in-chrome` folder. Each release includes SHA-256 checksums and a separate extension-only ZIP; the extension-only download still needs the Node bridge.
+
+There is no Chrome Web Store package or remote hosted browser service. This is a local unpacked extension and Node bridge, licensed under [MIT](LICENSE).
+
 ## Agent quick start
 
 **Purpose:** automate websites through tabs owned by the current OpenCode conversation. **Prerequisites:** Node.js 24+, Chrome 120+, OpenCode V2, and a paired/enabled extension. No build step is required.
 
-| Task                                         | Start here                                                                                     |
-| -------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| Install for a user                           | [Install](#install), then [One-time Chrome setup](#one-time-chrome-setup)                      |
-| Use an already paired browser                | Follow the workflow below and the [tool reference](#tools)                                     |
-| Recover from an error                        | [Troubleshooting](#troubleshooting)                                                            |
-| Change repository code                       | [CONTRIBUTING.md](CONTRIBUTING.md), [architecture](docs/architecture.md), then `npm run check` |
-| Configure approvals or assess account access | [Approvals](#approvals-for-browser-actions) and [SECURITY.md](SECURITY.md)                     |
+| Task                                         | Start here                                                                                                                       |
+| -------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Install for a user                           | [Easy install](#easy-install-recommended), or use the [installation skill](.opencode/skills/install-opencode-in-chrome/SKILL.md) |
+| Use an already paired browser                | Follow the workflow below and the [tool reference](#tools)                                                                       |
+| Recover from an error                        | [Troubleshooting](#troubleshooting)                                                                                              |
+| Change repository code                       | [CONTRIBUTING.md](CONTRIBUTING.md), [architecture](docs/architecture.md), then `npm run check`                                   |
+| Configure approvals or assess account access | [Approvals](#approvals-for-browser-actions) and [SECURITY.md](SECURITY.md)                                                       |
 
 ### Browser workflow: open → read → act → verify
 
@@ -52,7 +104,7 @@ read_page  {"tabID":<same tabID>}
 - Existing personal tabs cannot be adopted. Only this session's created tabs and their child tabs are available. Leave useful tabs open unless the task calls for closing them.
 - OpenCode supplies `ai.opencode/sessionID` metadata. It is not a tool argument; do not fabricate a session ID or reuse another conversation's identity.
 
-For installation, an agent can install dependencies, run setup, and register MCP from the target project. **The user completes Chrome profile selection, unpacked-extension loading, pairing, and the website-permission prompt.** Setup prints a secret token: transfer it only into the extension popup, not into a conversation, issue, or committed file.
+For installation, agents should use `install:opencode`, `pair`, and `doctor` as described above. **The user completes Chrome profile selection, unpacked-extension loading, pairing, and the website-permission prompt.** The lower-level `setup` command prints a secret token; prefer the installer/local pairing page when an agent is helping.
 
 ## Visible agent control
 
@@ -66,7 +118,7 @@ Requires [Node.js](https://nodejs.org/) 24+, Chrome 120+, and [OpenCode **V2**](
 
 **Security:** new tabs share the Chrome profile's signed-in accounts. Start with a dedicated Chrome profile and read [SECURITY.md](SECURITY.md) for risks, implemented safeguards, and token rotation. Session-owned tabs are not an account sandbox.
 
-## Install
+## Manual install
 
 Clone the repository into a permanent location, then install dependencies:
 
@@ -252,6 +304,8 @@ npm run check
 Tests exercise real MCP discovery/calls over authenticated WebSocket transport, automatic session tab creation, multi-tab operations, cross-session/personal-tab isolation, reconnect persistence, disabling, stale refs, and DOM form interaction. A browser smoke test requires loading the unpacked extension in Chrome.
 
 GitHub Actions runs lint, formatting, version consistency, and tests on Windows and Linux with Node.js 24. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and smoke-test instructions, [docs/architecture.md](docs/architecture.md) for the implementation, and [CHANGELOG.md](CHANGELOG.md) for updates.
+
+To build release archives locally, run `npm run package`. `dist/` contains the standalone project ZIP, extension-only ZIP, and SHA-256 checksums. Packaging uses an explicit source allowlist and excludes credentials, installed dependencies, and Git state. See [owner settings](docs/maintainer-setup.md) for review enforcement and private vulnerability reporting.
 
 ## Update or uninstall
 
