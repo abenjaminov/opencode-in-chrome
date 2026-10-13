@@ -1,6 +1,6 @@
 # OpenCode in Chrome — session-owned browser tabs
 
-[![CI](https://github.com/abenjaminov/opencode-in-chrome/actions/workflows/ci.yml/badge.svg)](https://github.com/abenjaminov/opencode-in-chrome/actions/workflows/ci.yml)
+[![CI](https://github.com/asaf-labs/opencode-in-chrome/actions/workflows/ci.yml/badge.svg)](https://github.com/asaf-labs/opencode-in-chrome/actions/workflows/ci.yml)
 
 A Manifest V3 Chrome extension and local MCP bridge. Once paired and enabled, an OpenCode conversation can create and control its own tabs automatically. The extension has a small setup popup; the conversation stays in OpenCode.
 
@@ -14,12 +14,48 @@ New tabs use your normal Chrome profile and its existing logins. Cookies stay in
 
 _UI illustration, not a captured browser screenshot._
 
+## Install from an OpenCode chat
+
+Open an OpenCode conversation in the project where you want browser tools, then **copy and paste this prompt**:
+
+```text
+Install OpenCode in Chrome for this OpenCode project's current directory:
+https://github.com/asaf-labs/opencode-in-chrome
+
+Do the setup for me, not just explain commands. Inspect existing chrome MCP
+registration first. Reuse a suitable checkout, or clone the repo into a
+permanent location. Preserve existing files, pairing settings, and unrelated
+OpenCode configuration. Check that Node.js 24+ and OpenCode V2 are available.
+
+Read the repo's README.md, SECURITY.md, and
+.opencode/skills/install-opencode-in-chrome/SKILL.md, then follow the skill.
+From the checkout, run the installer with --project pointing to this project's
+absolute path. Use npm.cmd on Windows if needed. Investigate any port conflict;
+ask before disconnecting another project's bridge or changing its settings.
+
+Run npm run pair to open the private local pairing page. Never read the token,
+the pairing HTML, or the clipboard into chat, logs, or screenshots. Guide me
+through the Chrome steps you cannot perform: dedicated profile, Developer mode,
+Load unpacked, toolbar pairing, and the website-permission prompt. Ask me to
+confirm when those steps are complete, then continue setup and verification.
+
+Check opencode mcp list from this project and npm run doctor from the checkout.
+Only say setup is complete when MCP is connected and Chrome is connected and
+enabled. Then use the Chrome MCP to open https://example.com in a new owned tab,
+read it, and report the observed result. Do not invent session IDs or refs.
+If blocked, explain the exact remaining step rather than claiming success.
+```
+
+The agent handles terminal commands, MCP registration, diagnostics, and final verification. **Chrome extension loading, pairing, and permission approval still require the user**; the prompt explicitly asks the agent to guide those steps and resume afterward. No token needs to be pasted into the conversation. If a prerequisite is missing, the agent should explain it and obtain permission before installing software or making system-wide changes.
+
+See [installation prompt details](docs/install-prompt.md) for setup boundaries and expected results. The manual commands below remain available if you prefer doing the setup yourself.
+
 ## Easy install (recommended)
 
 Requires Node.js 24+, Chrome 120+, and OpenCode V2 on your PATH. Choose the existing project that should get browser tools, then run:
 
 ```sh
-git clone https://github.com/abenjaminov/opencode-in-chrome.git
+git clone https://github.com/asaf-labs/opencode-in-chrome.git
 cd opencode-in-chrome
 npm run install:opencode -- --project "/absolute/path/to/your-project"
 npm run pair
@@ -28,7 +64,7 @@ npm run pair
 Windows example:
 
 ```powershell
-git clone https://github.com/abenjaminov/opencode-in-chrome.git
+git clone https://github.com/asaf-labs/opencode-in-chrome.git
 cd opencode-in-chrome
 npm.cmd run install:opencode -- --project "C:\path\to\your-project"
 npm.cmd run pair
@@ -58,7 +94,7 @@ Before the skill is installed, give your agent this repository URL and ask it to
 
 ### Install a stable release
 
-Download the full `opencode-in-chrome-<version>.zip` from [Releases](https://github.com/abenjaminov/opencode-in-chrome/releases), extract it to a permanent directory, and run the same installer/pair commands inside its `opencode-in-chrome` folder. Each release includes SHA-256 checksums and a separate extension-only ZIP; the extension-only download still needs the Node bridge.
+Download the full `opencode-in-chrome-<version>.zip` from [Releases](https://github.com/asaf-labs/opencode-in-chrome/releases), extract it to a permanent directory, and run the same installer/pair commands inside its `opencode-in-chrome` folder. Each release includes SHA-256 checksums and a separate extension-only ZIP; the extension-only download still needs the Node bridge.
 
 There is no Chrome Web Store package or remote hosted browser service. This is a local unpacked extension and Node bridge, licensed under [MIT](LICENSE).
 
@@ -123,7 +159,7 @@ Requires [Node.js](https://nodejs.org/) 24+, Chrome 120+, and [OpenCode **V2**](
 Clone the repository into a permanent location, then install dependencies:
 
 ```sh
-git clone https://github.com/abenjaminov/opencode-in-chrome.git
+git clone https://github.com/asaf-labs/opencode-in-chrome.git
 cd opencode-in-chrome
 npm ci
 npm run setup

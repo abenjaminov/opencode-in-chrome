@@ -15,5 +15,5 @@ const notes = changelog
 await mkdir(new URL('dist/', root), { recursive: true });
 await writeFile(
   new URL('dist/RELEASE_NOTES.md', root),
-  `${notes}\n\n## Downloads\n\n- \`opencode-in-chrome-${version}.zip\`: complete standalone project with bridge, extension, installer, skill, docs, and tests. Extract, then run \`npm run install:opencode -- --project <target-project>\`.\n- \`opencode-in-chrome-extension-${version}.zip\`: unpacked Chrome extension only; still requires a compatible installed bridge.\n- \`SHA256SUMS.txt\`: checksums for both archives.\n\nSee [installation instructions](https://github.com/abenjaminov/opencode-in-chrome#easy-install-recommended).\n`,
+  `${notes}\n\n## Downloads\n\n- \`opencode-in-chrome-${version}.zip\`: complete standalone project with bridge, extension, installer, skill, docs, and tests. Extract, then run \`npm run install:opencode -- --project <target-project>\`.\n- \`opencode-in-chrome-extension-${version}.zip\`: unpacked Chrome extension only; still requires a compatible installed bridge.\n- \`SHA256SUMS.txt\`: checksums for both archives.\n\nSee [installation instructions](https://github.com/asaf-labs/opencode-in-chrome#easy-install-recommended).\n`,
 );

@@ -14,7 +14,7 @@ Register `chrome` MCP in the user's chosen project, help the user complete Chrom
 
 1. Determine the **target project directory** and a permanent **extension checkout directory**. These are different roles. Inspect existing `chrome` registration first; its `command` may identify an installed checkout. Preserve unrelated configuration and user files.
 2. Check `node --version` (24+) and `opencode --version` (V2). If missing, guide installation from `https://nodejs.org/` and `https://opencode.ai/v2/docs/`. Do not guess V1 configuration shapes.
-3. If no checkout exists, clone `https://github.com/abenjaminov/opencode-in-chrome.git` into the chosen permanent directory. Read its README and SECURITY.md. If it already exists, inspect local changes before updating it.
+3. If no checkout exists, clone `https://github.com/asaf-labs/opencode-in-chrome.git` into the chosen permanent directory. Read its README and SECURITY.md. If it already exists, inspect local changes before updating it.
 4. From that checkout, run:
 
    ```sh

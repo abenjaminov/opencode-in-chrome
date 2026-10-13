@@ -6,7 +6,7 @@
   "description": "Session-owned Chrome tabs for OpenCode through an authenticated local MCP bridge.",
   "repository": {
     "type": "git",
-    "url": "https://github.com/abenjaminov/opencode-in-chrome.git"
+    "url": "https://github.com/asaf-labs/opencode-in-chrome.git"
   },
   "type": "module",
   "engines": {

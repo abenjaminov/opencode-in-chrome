@@ -1,9 +1,9 @@
 # GitHub requires the owner to have write access. Review enforcement also
 # requires a branch protection rule or ruleset with code-owner reviews enabled.
-* @abenjaminov
+* @abenjaminov @AsafBenjaminov
 
-/bridge/ @abenjaminov
-/extension/ @abenjaminov
-/.github/ @abenjaminov
-/scripts/ @abenjaminov
-/SECURITY.md @abenjaminov
+/bridge/ @abenjaminov @AsafBenjaminov
+/extension/ @abenjaminov @AsafBenjaminov
+/.github/ @abenjaminov @AsafBenjaminov
+/scripts/ @abenjaminov @AsafBenjaminov
+/SECURITY.md @abenjaminov @AsafBenjaminov
