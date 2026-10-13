@@ -1,0 +1,66 @@
+# Security model
+
+This is a browser-automation prototype, not a sandbox for an untrusted agent. Session-owned tabs isolate **which tabs** an agent can manipulate. They do not isolate cookies, accounts, network access, or the privileges of the local OpenCode process.
+
+## What could be dangerous?
+
+| Risk | Example | What helps |
+| --- | --- | --- |
+| Signed-in account actions | An agent opens your email, admin console, or shopping account in a new tab and submits a form | A dedicated Chrome profile; OpenCode tool permissions; supervision of write actions |
+| Private-data disclosure | Page text, input values, or screenshots are sent into the OpenCode conversation and may reach the configured model provider | Choose an appropriate provider; keep sensitive accounts out of the automation profile |
+| Prompt injection | A page tells the model to ignore instructions, open another site, or transmit private information | Treat page text as untrusted data; constrain tasks and tool permissions; profile isolation |
+| Unintended side effects | A click sends a message, deletes a record, approves a payment, or triggers a download | Require approval for interaction tools when appropriate; cancellation cannot undo completed actions |
+| Token compromise | Another process or extension obtains the pairing token and impersonates a browser connection | Keep the token private; protect local files/profile; rotate it when exposed |
+| Local/intranet access | An owned tab visits a router, localhost application, or internal service | Use a restricted profile/environment and network controls where necessary |
+| Dependency or update compromise | Modified extension/bridge code abuses its privileges | Review code and updates; use lockfile installs; avoid loading untrusted forks |
+
+The extension cannot reliably determine whether an arbitrary click is destructive. An orange cursor is visual feedback, **not an authorization check**. A website can also imitate a page indicator, so the page overlay is not a trusted security signal.
+
+## Implemented safeguards
+
+- **Loopback only:** the bridge listens on `127.0.0.1`, not a public interface.
+- **Random shared token:** setup generates 32 random bytes. HTTP status reads require the token; WebSocket connections authenticate before receiving commands or replacing the connected browser. Tokens are not placed in URLs.
+- **Host/origin checks:** unexpected hosts and ordinary website origins are rejected. Chrome-extension origins still need the token. The extension restricts the configured bridge URL to loopback HTTP.
+- **Session ownership:** browser actions verify both session generation and owned tab ID. Existing personal tabs and other sessions' tabs cannot be targeted through the tools.
+- **No arbitrary page evaluation tool:** model-visible tools are a fixed collection of tab and DOM operations. No shell command, filesystem API, cookie API, or arbitrary JavaScript evaluation is exposed by this MCP server.
+- **Isolated-world execution:** injected content scripts use Chrome's default isolated world, separate from the page's JavaScript globals. Page content is returned as data.
+- **Credential storage separation:** extension local/session storage is restricted to trusted extension contexts. Injected content scripts cannot read the stored pairing token.
+- **No password values in snapshots:** native password-input values are excluded. This does not guarantee that all secrets on a page are concealed; other inputs, page text and screenshots can contain sensitive data.
+- **Disable control:** disabling access rejects bridge work, invalidates generations, and notifies owned-page content scripts to stop pending interactions.
+- **Disconnect handling:** losing the bridge connection suspends browser actions and invalidates queued work. Reconnection rechecks enabled settings and browser permissions before announcing readiness.
+- **Cancellation propagation:** MCP cancellation and action timeouts are forwarded to the extension. Queued commands and pending pre-click animations can be cancelled. Completed actions are not reversed; Chrome API calls already in progress may still finish.
+- **Expiry/stale refs:** browser commands expire after 25 seconds; element refs are scoped to a document/snapshot and checked again before delayed interactions.
+- **Private local state:** `.local/` is ignored by Git. The bridge token and machine-specific MCP configuration must never be committed.
+
+## Trust boundaries and limitations
+
+1. The model and webpages are not trusted to make safe decisions automatically.
+2. The OpenCode process, MCP client, bridge, extension, local user account and installed code are trusted. OpenCode session IDs are routing metadata, not authentication credentials. A malicious local MCP client can forge this metadata; session ownership is not a multi-user authorization system.
+3. New tabs share the normal cookies and login state of the Chrome profile containing the extension. Opening an authenticated page can have side effects even before a click.
+4. Browser website permission is broad (`<all_urls>`), including permissions needed for viewport captures. Application-level ownership restricts tool targets, but the installed extension remains powerful.
+5. Other OpenCode servers/tools, such as shell or network tools, are outside this extension's controls. An agent with shell access can use the privileges of your OS account independently of these browser tools.
+6. Disconnect/disable/cancellation are best-effort stop mechanisms, not transactional rollback or a network firewall. They cannot stop a request that has already been sent.
+7. The token is stored as local data, not encrypted by the extension. POSIX setup uses mode `0600`; on Windows, effective protection comes from the directory's inherited NTFS ACLs. Malicious software running as your user is outside this threat model.
+8. Chrome extensions in an incognito profile or across separate Chrome profiles are not managed by this connection unless separately installed and paired.
+
+## Recommended deployment
+
+For initial installation, use a **dedicated Chrome profile** containing only accounts you intend to automate. This retains the useful signed-in browsing behavior while avoiding access to unrelated personal/work accounts.
+
+Review tool permissions in OpenCode. For sensitive work, use `ask` for interaction tools (`chrome_click`, `chrome_type`, `chrome_select`, `chrome_check`) and navigation. Approvals happen in OpenCode's normal interface, not a chat drawer in the extension. The extension does not silently modify your OpenCode permission rules.
+
+Keep the bridge on localhost, keep the token out of repositories/logs/screenshots, and disable browser access in the toolbar popup when finished. Session-created tabs remain open when disabled, but the agent cannot manipulate them through this server until re-enabled.
+
+## Rotate an exposed token
+
+```sh
+npm run setup -- --rotate-token
+```
+
+Then reconnect `chrome` in OpenCode's `/mcps` interface and replace the saved token in the extension popup. Rotation changes the file; an already-running bridge retains its previous token until restarted. Do not paste the token into a GitHub issue or an OpenCode prompt.
+
+## Reporting vulnerabilities
+
+Report suspected vulnerabilities privately to the repository maintainer. Use GitHub's private vulnerability reporting if the repository enables it. Do not post pairing tokens, signed-in page contents, screenshots with private information, or working exploit details in a public issue before coordinating a fix.
+
+This prototype has not undergone an independent security audit. Automated tests verify the implemented boundaries; they do not establish that browser automation is safe for every account or task.
