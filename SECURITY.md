@@ -4,15 +4,15 @@ This is a browser-automation prototype, not a sandbox for an untrusted agent. Se
 
 ## What could be dangerous?
 
-| Risk | Example | What helps |
-| --- | --- | --- |
-| Signed-in account actions | An agent opens your email, admin console, or shopping account in a new tab and submits a form | A dedicated Chrome profile; OpenCode tool permissions; supervision of write actions |
-| Private-data disclosure | Page text, input values, or screenshots are sent into the OpenCode conversation and may reach the configured model provider | Choose an appropriate provider; keep sensitive accounts out of the automation profile |
-| Prompt injection | A page tells the model to ignore instructions, open another site, or transmit private information | Treat page text as untrusted data; constrain tasks and tool permissions; profile isolation |
-| Unintended side effects | A click sends a message, deletes a record, approves a payment, or triggers a download | Require approval for interaction tools when appropriate; cancellation cannot undo completed actions |
-| Token compromise | Another process or extension obtains the pairing token and impersonates a browser connection | Keep the token private; protect local files/profile; rotate it when exposed |
-| Local/intranet access | An owned tab visits a router, localhost application, or internal service | Use a restricted profile/environment and network controls where necessary |
-| Dependency or update compromise | Modified extension/bridge code abuses its privileges | Review code and updates; use lockfile installs; avoid loading untrusted forks |
+| Risk                            | Example                                                                                                                     | What helps                                                                                          |
+| ------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
+| Signed-in account actions       | An agent opens your email, admin console, or shopping account in a new tab and submits a form                               | A dedicated Chrome profile; OpenCode tool permissions; supervision of write actions                 |
+| Private-data disclosure         | Page text, input values, or screenshots are sent into the OpenCode conversation and may reach the configured model provider | Choose an appropriate provider; keep sensitive accounts out of the automation profile               |
+| Prompt injection                | A page tells the model to ignore instructions, open another site, or transmit private information                           | Treat page text as untrusted data; constrain tasks and tool permissions; profile isolation          |
+| Unintended side effects         | A click sends a message, deletes a record, approves a payment, or triggers a download                                       | Require approval for interaction tools when appropriate; cancellation cannot undo completed actions |
+| Token compromise                | Another process or extension obtains the pairing token and impersonates a browser connection                                | Keep the token private; protect local files/profile; rotate it when exposed                         |
+| Local/intranet access           | An owned tab visits a router, localhost application, or internal service                                                    | Use a restricted profile/environment and network controls where necessary                           |
+| Dependency or update compromise | Modified extension/bridge code abuses its privileges                                                                        | Review code and updates; use lockfile installs; avoid loading untrusted forks                       |
 
 The extension cannot reliably determine whether an arbitrary click is destructive. An orange cursor is visual feedback, **not an authorization check**. A website can also imitate a page indicator, so the page overlay is not a trusted security signal.
 
@@ -28,6 +28,7 @@ The extension cannot reliably determine whether an arbitrary click is destructiv
 - **No password values in snapshots:** native password-input values are excluded. This does not guarantee that all secrets on a page are concealed; other inputs, page text and screenshots can contain sensitive data.
 - **Disable control:** disabling access rejects bridge work, invalidates generations, and notifies owned-page content scripts to stop pending interactions.
 - **Disconnect handling:** losing the bridge connection suspends browser actions and invalidates queued work. Reconnection rechecks enabled settings and browser permissions before announcing readiness.
+- **Authenticated readiness:** pairing and reconnection leave controls suspended until the bridge acknowledges authentication. Invalid ownership data in a new handshake is rejected before replacing a working connection.
 - **Cancellation propagation:** MCP cancellation and action timeouts are forwarded to the extension. Queued commands and pending pre-click animations can be cancelled. Completed actions are not reversed; Chrome API calls already in progress may still finish.
 - **Expiry/stale refs:** browser commands expire after 25 seconds; element refs are scoped to a document/snapshot and checked again before delayed interactions.
 - **Private local state:** `.local/` is ignored by Git. The bridge token and machine-specific MCP configuration must never be committed.
@@ -42,12 +43,15 @@ The extension cannot reliably determine whether an arbitrary click is destructiv
 6. Disconnect/disable/cancellation are best-effort stop mechanisms, not transactional rollback or a network firewall. They cannot stop a request that has already been sent.
 7. The token is stored as local data, not encrypted by the extension. POSIX setup uses mode `0600`; on Windows, effective protection comes from the directory's inherited NTFS ACLs. Malicious software running as your user is outside this threat model.
 8. Chrome extensions in an incognito profile or across separate Chrome profiles are not managed by this connection unless separately installed and paired.
+9. Viewport capture uses Chrome's active-tab API. The extension verifies the target before and after capture, but this is a best-effort race check: avoid switching tabs during screenshots. It is not an atomic tab-specific capture API.
 
 ## Recommended deployment
 
 For initial installation, use a **dedicated Chrome profile** containing only accounts you intend to automate. This retains the useful signed-in browsing behavior while avoiding access to unrelated personal/work accounts.
 
 Review tool permissions in OpenCode. For sensitive work, use `ask` for interaction tools (`chrome_click`, `chrome_type`, `chrome_select`, `chrome_check`) and navigation. Approvals happen in OpenCode's normal interface, not a chat drawer in the extension. The extension does not silently modify your OpenCode permission rules.
+
+A ready-to-merge [supervised permission example](examples/permissions.jsonc) asks for all browser actions except listing, reading, and scrolling. Rules use OpenCode V2's ordered `permissions` array. The MCP registration name determines the action prefix; update `chrome_` if you register under a different name.
 
 Keep the bridge on localhost, keep the token out of repositories/logs/screenshots, and disable browser access in the toolbar popup when finished. Session-created tabs remain open when disabled, but the agent cannot manipulate them through this server until re-enabled.
 

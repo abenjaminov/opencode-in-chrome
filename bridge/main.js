@@ -1,3 +1,4 @@
+import { readConfig } from './config.js';
 import { readFile } from 'node:fs/promises';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -5,10 +6,11 @@ import { BrowserHub } from './hub.js';
 import { createBridgeHttp } from './http.js';
 import { registerBrowserTools } from './tools.js';
 
-const config = JSON.parse(await readFile(new URL('../.local/config.json', import.meta.url), 'utf8').catch(() => {
-  throw new Error('Run npm run setup in chrome-extension first.');
-}));
-if (typeof config.token !== 'string' || config.token.length < 32 || !Number.isInteger(config.port) || config.port < 1024 || config.port > 65535) throw new Error('Invalid bridge settings');
+const config = await readConfig().catch((error) => {
+  if (error.code === 'ENOENT') throw new Error('Run npm run setup in opencode-in-chrome first.');
+  throw error;
+});
+const { version } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 const hub = new BrowserHub();
 const { server, sockets } = createBridgeHttp({ ...config, hub });
 await new Promise((resolve, reject) => {
@@ -17,7 +19,7 @@ await new Promise((resolve, reject) => {
 });
 // Only protocol messages go to stdout; OpenCode owns this process via stdio.
 console.error(`OpenCode Chrome bridge listening on http://127.0.0.1:${config.port}`);
-const mcp = new McpServer({ name: 'opencode-in-chrome', version: '0.3.1' });
+const mcp = new McpServer({ name: 'opencode-in-chrome', version });
 registerBrowserTools(mcp, hub);
 await mcp.connect(new StdioServerTransport());
 let closing = false;

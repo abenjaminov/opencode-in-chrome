@@ -1,0 +1,11 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  // Merge these ordered rules into your target project's existing permissions.
+  // Later matching rules win. Keep the MCP registration name as "chrome".
+  "permissions": [
+    { "action": "chrome_*", "resource": "*", "effect": "ask" },
+    { "action": "chrome_list_tabs", "resource": "*", "effect": "allow" },
+    { "action": "chrome_read_page", "resource": "*", "effect": "allow" },
+    { "action": "chrome_scroll", "resource": "*", "effect": "allow" },
+  ],
+}

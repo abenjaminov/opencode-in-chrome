@@ -1,5 +1,7 @@
 # OpenCode in Chrome — session-owned browser tabs
 
+[![CI](https://github.com/abenjaminov/opencode-in-chrome/actions/workflows/ci.yml/badge.svg)](https://github.com/abenjaminov/opencode-in-chrome/actions/workflows/ci.yml)
+
 A Manifest V3 Chrome extension and local MCP bridge. Once paired and enabled, an OpenCode conversation can create and control its own tabs automatically. The extension has a small setup popup; the conversation stays in OpenCode.
 
 ```text
@@ -61,7 +63,7 @@ The registration is project-local: all conversations in that configured project 
 
 ## One-time Chrome setup
 
-1. Open `chrome://extensions` in your regular profile and enable **Developer mode**.
+1. Create or select a **dedicated automation Chrome profile**, then open `chrome://extensions` and enable **Developer mode**.
 2. Click **Load unpacked**, selecting this folder's **`extension`** subfolder.
 3. Click the extension's toolbar icon.
 4. Enter the bridge URL and pairing token, then click **Save & enable browser**.
@@ -72,6 +74,21 @@ For example: **“Open a new tab, search for dbt, and summarize the results.”*
 
 No session selection or manual tab connection is needed. The calling OpenCode session is identified by its `ai.opencode/sessionID` MCP metadata. OpenCode's own tool permissions continue to apply in its normal interface.
 
+### Approvals for browser actions
+
+For supervised automation, merge [examples/permissions.jsonc](examples/permissions.jsonc) into your target project's existing OpenCode configuration. It allows reading, listing, and scrolling; other browser tools ask for approval, including opening/navigating tabs, capturing screenshots, and interacting with forms.
+
+The example assumes the MCP server is registered as `chrome`. Review later rules and saved approvals, which may broaden access. See [OpenCode V2 permissions](https://opencode.ai/v2/docs/permissions) for rule precedence. These are OpenCode approvals; the extension's popup is only for pairing and enabling access.
+
+### Choose a port or rotate the token
+
+```sh
+npm run setup -- --port 8791
+npm run setup -- --rotate-token
+```
+
+Setup validates options and preserves other settings. After changing the port or token, reconnect the MCP server in OpenCode and update the extension popup. A running bridge keeps its old settings until restarted. Each concurrent bridge requires its own checkout/configuration and port.
+
 ## Upgrade from the original side-panel version
 
 Reload the extension in `chrome://extensions`, close the old side panel, and open the toolbar popup once. Your URL/token are retained. Click **Save & enable browser** and accept the updated website permission. Reconnect `chrome` in OpenCode's `/mcps` interface to reload the bridge if it has not already been restarted.
@@ -80,18 +97,18 @@ The original manually connected tabs are released from automation. They remain o
 
 ## Tools
 
-| Tool | Behavior |
-| --- | --- |
-| `open_tab` | Create a new session-owned tab at an optional HTTP/HTTPS URL; defaults to `about:blank` |
-| `list_tabs` | List this session's own tabs and its current tab |
-| `focus_tab` | Activate an owned tab and make it the session's current tab |
-| `close_tab` | Close an owned tab |
-| `navigate` | Navigate an owned tab to HTTP/HTTPS |
-| `read_page` | Page title, URL, up to 40,000 characters of text, and 300 visible interactive elements with refs |
-| `click` / `type` | Click or replace editable text using element refs |
-| `select` / `check` | Set native dropdown or checkbox/radio values |
-| `scroll` | Scroll vertically |
-| `screenshot` | Activate an owned tab and capture its viewport as an MCP image |
+| Tool               | Behavior                                                                                         |
+| ------------------ | ------------------------------------------------------------------------------------------------ |
+| `open_tab`         | Create a new session-owned tab at an optional HTTP/HTTPS URL; defaults to `about:blank`          |
+| `list_tabs`        | List this session's own tabs and its current tab                                                 |
+| `focus_tab`        | Activate an owned tab and make it the session's current tab                                      |
+| `close_tab`        | Close an owned tab                                                                               |
+| `navigate`         | Navigate an owned tab to HTTP/HTTPS                                                              |
+| `read_page`        | Page title, URL, up to 40,000 characters of text, and 300 visible interactive elements with refs |
+| `click` / `type`   | Click or replace editable text using element refs                                                |
+| `select` / `check` | Set native dropdown or checkbox/radio values                                                     |
+| `scroll`           | Scroll vertically                                                                                |
+| `screenshot`       | Activate an owned tab and capture its viewport as an MCP image                                   |
 
 Operations accept an optional `tabID`; when omitted, they target this session's current tab. `open_tab` returns the new ID. Use explicit IDs when working across several tabs. Start with `read_page` before interacting; refs belong to that tab's latest snapshot and expire after another snapshot or navigation.
 
@@ -117,13 +134,13 @@ Tabs opened by links/popups from an owned tab inherit that session's ownership. 
 
 ## Verify
 
-```powershell
-npm.cmd test
+```sh
+npm run check
 ```
 
 Tests exercise real MCP discovery/calls over authenticated WebSocket transport, automatic session tab creation, multi-tab operations, cross-session/personal-tab isolation, reconnect persistence, disabling, stale refs, and DOM form interaction. A browser smoke test requires loading the unpacked extension in Chrome.
 
-GitHub Actions runs the test suite on Windows and Linux with Node.js 24. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and smoke-test instructions.
+GitHub Actions runs lint, formatting, version consistency, and tests on Windows and Linux with Node.js 24. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and smoke-test instructions, [docs/architecture.md](docs/architecture.md) for the implementation, and [CHANGELOG.md](CHANGELOG.md) for updates.
 
 ## Update or uninstall
 

@@ -4,10 +4,16 @@ import { SessionBrowser } from '../extension/session-browser.js';
 import { fakeChrome } from './fake-chrome.js';
 
 function fixture() {
-  const chrome = fakeChrome(), messages = [];
-  const browser = new SessionBrowser(chrome, message => messages.push(structuredClone(message)));
+  const chrome = fakeChrome(),
+    messages = [];
+  const browser = new SessionBrowser(chrome, (message) => messages.push(structuredClone(message)));
   browser.enabled = true;
-  const command = (tool, args = {}, sessionID = 'ses_one', generation = browser.bindings[sessionID]?.generation || `generation-${sessionID}`) => ({ tool, args, sessionID, generation, expiresAt: Date.now() + 25000 });
+  const command = (
+    tool,
+    args = {},
+    sessionID = 'ses_one',
+    generation = browser.bindings[sessionID]?.generation || `generation-${sessionID}`,
+  ) => ({ tool, args, sessionID, generation, expiresAt: Date.now() + 25000 });
   return { browser, chrome, command, messages };
 }
 
@@ -27,10 +33,23 @@ test('no tool can target a personal tab or a different session’s tab', async (
   const { browser, chrome, command } = fixture();
   const other = await browser.run(command('open_tab', { url: 'https://example.com' }, 'ses_other'));
   const scriptCount = chrome.scriptCalls.length;
-  for (const tool of ['read_page', 'click', 'type', 'select', 'check', 'scroll', 'navigate', 'screenshot', 'focus_tab', 'close_tab']) {
-    for (const tabID of [1, other.tabID]) await assert.rejects(browser.run(command(tool, { tabID })), /does not own/);
+  for (const tool of [
+    'read_page',
+    'click',
+    'type',
+    'select',
+    'check',
+    'scroll',
+    'navigate',
+    'screenshot',
+    'focus_tab',
+    'close_tab',
+  ]) {
+    for (const tabID of [1, other.tabID])
+      await assert.rejects(browser.run(command(tool, { tabID })), /does not own/);
   }
-  assert.equal(chrome.scriptCalls.length, scriptCount); assert.ok(chrome.tabState.has(1));
+  assert.equal(chrome.scriptCalls.length, scriptCount);
+  assert.ok(chrome.tabState.has(1));
 });
 
 test('document refs stay per-tab and are cleared on navigation', async () => {
@@ -52,8 +71,12 @@ test('ownership survives worker restart; missing tabs and v1 manual bindings are
   const saved = structuredClone(browser.bindings);
   saved.ses_one.tabs.push({ id: 999 });
   saved.ses_old = { tabID: 1, generation: 'old-manual-binding' };
-  const restarted = new SessionBrowser(chrome); await restarted.restore(saved);
-  assert.deepEqual(restarted.bindings.ses_one.tabs.map(tab => tab.id), [owned.tabID]);
+  const restarted = new SessionBrowser(chrome);
+  await restarted.restore(saved);
+  assert.deepEqual(
+    restarted.bindings.ses_one.tabs.map((tab) => tab.id),
+    [owned.tabID],
+  );
   assert.equal(restarted.bindings.ses_old, undefined);
 });
 
@@ -62,7 +85,10 @@ test('new tabs spawned from an owned tab inherit ownership, personal-tab childre
   const owned = await browser.run(command('open_tab', { url: 'https://example.com' }));
   await browser.created({ id: 200, openerTabId: owned.tabID, url: 'https://child.example' });
   await browser.created({ id: 201, openerTabId: 1, url: 'https://personal-child.example' });
-  assert.deepEqual(browser.bindings.ses_one.tabs.map(tab => tab.id), [owned.tabID, 200]);
+  assert.deepEqual(
+    browser.bindings.ses_one.tabs.map((tab) => tab.id),
+    [owned.tabID, 200],
+  );
 });
 
 test('expired and disabled commands cannot create tabs; re-enable cannot revive queued commands', async () => {
@@ -71,7 +97,8 @@ test('expired and disabled commands cannot create tabs; re-enable cannot revive 
   await assert.rejects(browser.run(expired), /expired/);
   await browser.run(command('list_tabs'));
   const queued = command('open_tab');
-  browser.enabled = false; await browser.invalidate();
+  browser.enabled = false;
+  await browser.invalidate();
   await assert.rejects(browser.run(queued), /Enable browser/);
   browser.enabled = true;
   await assert.rejects(browser.run(queued), /stopped or changed/);
@@ -89,7 +116,8 @@ test('owned tabs get orange groups per session; personal tabs remain unmarked', 
   assert.equal(chrome.groupState.get(firstGroup).color, 'orange');
   assert.match(chrome.groupState.get(firstGroup).title, /OpenCode/);
   assert.equal(chrome.tabState.get(1).groupId, undefined);
-  browser.enabled = false; await browser.refreshIndicators();
+  browser.enabled = false;
+  await browser.refreshIndicators();
   assert.equal(chrome.groupState.get(firstGroup).color, 'grey');
   assert.equal(chrome.scriptCalls.at(-1).args[0], false);
 });
@@ -111,7 +139,10 @@ test('connection loss suspends actions and notifies only owned pages', async () 
   const queued = command('click', { ref: 'e1' });
   await browser.suspend();
   assert.equal(browser.enabled, false);
-  assert.deepEqual(chrome.messages.map(m => m.tabID), [owned.tabID]);
+  assert.deepEqual(
+    chrome.messages.map((m) => m.tabID),
+    [owned.tabID],
+  );
   assert.equal(chrome.messages[0].message.type, 'opencode-disable');
   browser.enabled = true;
   await assert.rejects(browser.run(queued), /stopped or changed/);
@@ -120,8 +151,15 @@ test('connection loss suspends actions and notifies only owned pages', async () 
 test('cancelled commands cannot run and cancellation messages target their owned tab', async () => {
   const { browser, chrome, command } = fixture();
   const owned = await browser.run(command('open_tab', { url: 'https://example.com' }));
-  const pending = { ...command('click', { ref: 'e1' }), id: 'action-one', executingTabID: owned.tabID };
+  const pending = {
+    ...command('click', { ref: 'e1' }),
+    id: 'action-one',
+    executingTabID: owned.tabID,
+  };
   await browser.cancel(pending);
   await assert.rejects(browser.run(pending), /cancelled/);
-  assert.deepEqual(chrome.messages[0], { tabID: owned.tabID, message: { type: 'opencode-cancel', id: 'action-one' } });
+  assert.deepEqual(chrome.messages[0], {
+    tabID: owned.tabID,
+    message: { type: 'opencode-cancel', id: 'action-one' },
+  });
 });

@@ -1,5 +1,19 @@
 import { randomUUID } from 'node:crypto';
 
+export function validateBinding(sessionID, binding) {
+  if (
+    !/^ses[\w-]+$/.test(sessionID) ||
+    !binding ||
+    !Array.isArray(binding.tabs) ||
+    !binding.tabs.every((tab) => Number.isInteger(tab?.id) && tab.id >= 0) ||
+    typeof binding.generation !== 'string' ||
+    !binding.generation
+  ) {
+    throw new Error('Invalid tab binding');
+  }
+  return { ...binding, paused: !!binding.paused };
+}
+
 export class BrowserHub {
   socket = null;
   browserEnabled = false;
@@ -30,22 +44,27 @@ export class BrowserHub {
   }
 
   bind(sessionID, binding) {
-    if (!/^ses[\w-]+$/.test(sessionID) || !Array.isArray(binding.tabs) || !binding.tabs.every(tab => Number.isInteger(tab.id)) || typeof binding.generation !== 'string') {
-      throw new Error('Invalid tab binding');
-    }
-    if (this.bindings.get(sessionID)?.generation !== binding.generation) this.cancel(sessionID, 'Browser session changed');
-    this.bindings.set(sessionID, { ...binding, paused: !!binding.paused });
+    const validated = validateBinding(sessionID, binding);
+    if (this.bindings.get(sessionID)?.generation !== binding.generation)
+      this.cancel(sessionID, 'Browser session changed');
+    this.bindings.set(sessionID, validated);
   }
 
   cancel(sessionID, reason = 'Stopped') {
     for (const [id, entry] of this.pending) {
-      if (entry.sessionID === sessionID) { entry.reject(new Error(reason)); this.pending.delete(id); }
+      if (entry.sessionID === sessionID) {
+        entry.reject(new Error(reason));
+        this.pending.delete(id);
+      }
     }
   }
 
   pause(sessionID) {
     let binding = this.bindings.get(sessionID);
-    if (!binding) { binding = { generation: randomUUID(), tabs: [] }; this.bindings.set(sessionID, binding); }
+    if (!binding) {
+      binding = { generation: randomUUID(), tabs: [] };
+      this.bindings.set(sessionID, binding);
+    }
     binding.paused = true;
     this.cancel(sessionID);
   }
@@ -53,7 +72,9 @@ export class BrowserHub {
   receive(message) {
     if (message.type === 'availability') {
       this.browserEnabled = message.enabled === true;
-      if (!this.browserEnabled) for (const sessionID of this.bindings.keys()) this.cancel(sessionID, 'Browser access disabled');
+      if (!this.browserEnabled)
+        for (const sessionID of this.bindings.keys())
+          this.cancel(sessionID, 'Browser access disabled');
     }
     if (message.type === 'bind') this.bind(message.sessionID, message.binding);
     if (message.type === 'unbind') {
@@ -70,16 +91,24 @@ export class BrowserHub {
 
   async call(sessionID, tool, args, signal) {
     if (signal?.aborted) throw new Error('Browser action cancelled');
-    if (!/^ses[\w-]+$/.test(sessionID || '')) throw new Error('This tool requires OpenCode session metadata.');
+    if (!/^ses[\w-]+$/.test(sessionID || ''))
+      throw new Error('This tool requires OpenCode session metadata.');
     if (!this.socket || this.socket.readyState !== 1) throw new Error('Chrome is disconnected.');
-    if (this.extensionProtocol !== 2) throw new Error('Chrome is running the old extension. Reload OpenCode in Chrome at chrome://extensions.');
-    if (!this.browserEnabled) throw new Error('Browser access is disabled. Click Save & enable browser in the extension toolbar popup.');
+    if (this.extensionProtocol !== 2)
+      throw new Error(
+        'Chrome is running the old extension. Reload OpenCode in Chrome at chrome://extensions.',
+      );
+    if (!this.browserEnabled)
+      throw new Error(
+        'Browser access is disabled. Click Save & enable browser in the extension toolbar popup.',
+      );
     let binding = this.bindings.get(sessionID);
     if (!binding) {
       binding = { generation: randomUUID(), tabs: [], paused: false };
       this.bindings.set(sessionID, binding);
     }
-    if (binding.paused) throw new Error('Browser actions stopped. Enable browser access in the extension popup.');
+    if (binding.paused)
+      throw new Error('Browser actions stopped. Enable browser access in the extension popup.');
     const id = randomUUID();
     this.activity.push({ id, sessionID, tool, time: Date.now(), status: 'working' });
     this.activity = this.activity.slice(-100);
@@ -89,7 +118,8 @@ export class BrowserHub {
       const entry = this.pending.get(id);
       if (!entry) return;
       this.pending.delete(id);
-      if (this.socket?.readyState === 1) this.socket.send(JSON.stringify({ type: 'cancel', id, sessionID }));
+      if (this.socket?.readyState === 1)
+        this.socket.send(JSON.stringify({ type: 'cancel', id, sessionID }));
       entry.reject(new Error(reason));
     };
     const onAbort = () => abort();
@@ -98,9 +128,29 @@ export class BrowserHub {
         timer = setTimeout(() => abort('Browser action timed out'), 25000);
         this.pending.set(id, { sessionID, resolve, reject });
         signal?.addEventListener('abort', onAbort, { once: true });
-        this.socket.send(JSON.stringify({ type: 'command', id, sessionID, tool, args, generation: binding.generation, expiresAt: Date.now() + 25000 }));
-      }).then(result => { activity.status = 'done'; return result; });
-    } catch (error) { activity.status = 'error'; activity.error = error.message; throw error; }
-    finally { clearTimeout(timer); this.pending.delete(id); signal?.removeEventListener('abort', onAbort); }
+        this.socket.send(
+          JSON.stringify({
+            type: 'command',
+            id,
+            sessionID,
+            tool,
+            args,
+            generation: binding.generation,
+            expiresAt: Date.now() + 25000,
+          }),
+        );
+      }).then((result) => {
+        activity.status = 'done';
+        return result;
+      });
+    } catch (error) {
+      activity.status = 'error';
+      activity.error = error.message;
+      throw error;
+    } finally {
+      clearTimeout(timer);
+      this.pending.delete(id);
+      signal?.removeEventListener('abort', onAbort);
+    }
   }
 }

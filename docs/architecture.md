@@ -1,0 +1,59 @@
+# Architecture
+
+```text
+OpenCode conversation
+  └─ MCP stdio (session ID in ai.opencode/sessionID metadata)
+      └─ Node bridge, bound to 127.0.0.1
+          └─ authenticated WebSocket /browser, protocol version 2
+              └─ Chrome service worker
+                  └─ session-owned tabs + isolated-world content scripts
+```
+
+## Modules
+
+| Path                           | Responsibility                                                                        |
+| ------------------------------ | ------------------------------------------------------------------------------------- |
+| `bridge/config.js`             | Validate/read/write local credentials; validate setup options                         |
+| `bridge/setup.js`              | Generate credentials and print project-local MCP registration                         |
+| `bridge/main.js`               | Start HTTP and stdio MCP transports; manage process shutdown                          |
+| `bridge/http.js`               | Enforce loopback host/origin/token boundaries and validate handshakes                 |
+| `bridge/hub.js`                | Route sessions, track generations and pending calls, forward cancellation             |
+| `bridge/tools.js`              | Fixed MCP schemas, descriptions, and result conversion                                |
+| `extension/background.js`      | Pairing/settings, authentication lifecycle, per-session command queues, Chrome events |
+| `extension/session-browser.js` | Owned-tab lifecycle, persistence, generation checks, script execution, visual marking |
+| `extension/content.js`         | Page snapshots, scoped element refs, fixed DOM actions, orange overlay/cursor         |
+| `extension/popup.*`            | One-time pairing and global enable/disable controls                                   |
+
+There is no build step, arbitrary page-evaluation tool, or conversation UI in the extension.
+
+## Connection lifecycle
+
+1. The worker restricts storage to trusted extension contexts and restores session-owned tabs from `chrome.storage.session`. It starts suspended and invalidates old generations.
+2. It connects to the configured loopback URL, rechecks website permission, and sends `hello` with the token, enabled preference, and ownership bindings.
+3. The bridge checks host/origin, authenticates the token, and validates all ownership bindings before replacing a connected browser. It replies `ready`.
+4. Only after `ready` does the worker enable controls. The bridge accepts MCP commands only for protocol version 2 while browser access is enabled.
+5. Disconnect suspends page controls, changes generations, rejects pending bridge calls, and schedules reconnection. Pairing changes also suspend controls before reconnecting.
+
+The bridge supports one browser connection and one stdio MCP client. Multiple conversations share that client and are routed by session metadata. Multiple independent bridge processes require separate ports/configurations.
+
+## Commands, cancellation, and refs
+
+The bridge attaches a random request ID, session generation, and 25-second deadline. The worker queues commands per session; different sessions can run concurrently. SessionBrowser checks ownership and generation before work and after asynchronous boundaries. Content actions recheck enabled state, cancellation, snapshot revision, and DOM validity after the cursor animation before interaction.
+
+`read_page` creates a fresh ref map. A monotonically increasing ref counter avoids accidentally reusing old names; snapshot revision checks also stop a pending action when a new snapshot replaces its map. Document IDs and URL checks prevent refs crossing documents or same-document navigation.
+
+MCP cancellation and timeouts send `cancel` to the worker. Queued work is marked cancelled; executing page interactions receive an extension message. Disable and disconnect notify all owned tabs. These are best-effort stops, not rollback: an already-issued Chrome call or network request may complete.
+
+## Persistence and trust
+
+- `.local/config.json`: token and port; ignored by Git.
+- `.local/mcp-config.json`: generated machine-specific OpenCode registration; ignored by Git.
+- `chrome.storage.local`: pairing and enabled preference; restricted to trusted contexts.
+- `chrome.storage.session`: temporary ownership, current tab, group IDs, and generations; cleared by a Chrome browser restart.
+- Bridge memory: pending requests, routing bindings, and the last 100 activity summaries.
+
+Session ownership is a tab-targeting boundary, not account isolation. Session IDs are trusted MCP routing metadata, not credentials. Page content is untrusted data. See [SECURITY.md](../SECURITY.md) for the complete threat model.
+
+## Verification
+
+`npm run check` runs lint, formatting, metadata checks, and automated tests. Tests cover authenticated transport with a real MCP client/server pair, session ownership with a simulated Chrome API, the worker readiness lifecycle, configuration validation, and DOM/cancellation behavior with jsdom. Real Chrome behavior still needs the manual smoke test in [CONTRIBUTING.md](../CONTRIBUTING.md).

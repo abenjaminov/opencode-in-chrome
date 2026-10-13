@@ -1,17 +1,21 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><title>OpenCode in Chrome</title><link rel="stylesheet" href="popup.css"></head>
-<body>
-  <h1>OpenCode in Chrome</h1>
-  <p id="status" role="status">Connecting…</p>
-  <p>Once enabled, OpenCode conversations can open and control their own tabs automatically.</p>
-  <form id="settings-form">
-    <label>Bridge URL<input id="url" type="url" value="http://127.0.0.1:8790" required></label>
-    <label>Pairing token<input id="token" type="password" autocomplete="off" required></label>
-    <button id="enable">Save & enable browser</button>
-  </form>
-  <button id="disable">Disable browser access</button>
-  <p id="error" role="alert" hidden></p>
-  <script type="module" src="popup.js"></script>
-</body>
+  <head>
+    <meta charset="utf-8" />
+    <title>OpenCode in Chrome</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <h1>OpenCode in Chrome</h1>
+    <p id="status" role="status">Connecting…</p>
+    <p>Once enabled, OpenCode conversations can open and control their own tabs automatically.</p>
+    <form id="settings-form">
+      <label>Bridge URL<input id="url" type="url" value="http://127.0.0.1:8790" required /></label>
+      <label>Pairing token<input id="token" type="password" autocomplete="off" required /></label>
+      <button id="enable">Save & enable browser</button>
+    </form>
+    <button id="disable">Disable browser access</button>
+    <p id="error" role="alert" hidden></p>
+    <script type="module" src="popup.js"></script>
+  </body>
 </html>
