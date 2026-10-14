@@ -1,5 +1,5 @@
 (() => {
-  if (globalThis.__opencodeChrome?.version === 5) return;
+  if (globalThis.__opencodeChrome?.version === 7) return;
   globalThis.__opencodeChrome?.dispose?.();
   globalThis.__opencodeChrome?.setEnabled?.(false);
   let refs = new Map(),
@@ -100,13 +100,140 @@
     ring.classList.add('pulse');
   }
   setEnabled(true);
+  const interactiveRoles = [
+    'button',
+    'link',
+    'checkbox',
+    'radio',
+    'switch',
+    'option',
+    'combobox',
+    'menuitem',
+    'menuitemcheckbox',
+    'menuitemradio',
+    'tab',
+    'textbox',
+    'searchbox',
+    'treeitem',
+    'spinbutton',
+    'slider',
+  ];
+  const interactiveSelector = [
+    'a[href]',
+    'button',
+    'input',
+    'textarea',
+    'select',
+    'summary',
+    'label',
+    '[contenteditable="true"]',
+    ...interactiveRoles.map((role) => `[role~="${role}"]`),
+  ].join(',');
+  const popupSelector = '[role~="listbox"],[role~="menu"],[role~="dialog"],[aria-modal="true"]';
+  const text = (element) =>
+    (element?.innerText || element?.textContent || '').replace(/\s+/g, ' ').trim();
+  function label(element) {
+    const labelledBy = (element.getAttribute('aria-labelledby') || '')
+      .split(/\s+/)
+      .map((id) => text(document.getElementById(id)))
+      .filter(Boolean)
+      .join(' ');
+    return (
+      labelledBy ||
+      element.getAttribute('aria-label') ||
+      [...(element.labels || [])].map(text).filter(Boolean).join(' ') ||
+      text(element) ||
+      element.placeholder ||
+      element.name ||
+      ''
+    ).slice(0, 300);
+  }
+  function disabled(element) {
+    return element.matches(':disabled') || !!element.closest('[aria-disabled="true"],[inert]');
+  }
   function visible(element) {
     const style = getComputedStyle(element);
     return (
       element.getClientRects().length > 0 &&
+      !element.closest('[hidden]') &&
       style.visibility !== 'hidden' &&
       style.display !== 'none'
     );
+  }
+  function frameContext() {
+    const framePath = [];
+    let current = window;
+    while (current !== window.top) {
+      const parent = current.parent;
+      let index = -1;
+      // WindowProxy identity and indexed frames are accessible across origins;
+      // do not inspect another frame's DOM or trust page-supplied routing data.
+      for (let i = 0; i < parent.length; i++) {
+        if (parent.frames[i] === current) {
+          index = i;
+          break;
+        }
+      }
+      if (index < 0 || framePath.length >= 32)
+        throw new Error('Could not resolve frame ancestry safely.');
+      framePath.unshift(index);
+      current = parent;
+    }
+    return { documentID, framePath, viewportWidth: innerWidth, viewportHeight: innerHeight };
+  }
+  function projectFramePoint(args) {
+    if (!enabled || cancelledActions.has(args.commandID) || args.documentID !== documentID) {
+      throw new Error('Containing frame changed or browser access stopped.');
+    }
+    const context = frameContext();
+    if (JSON.stringify(context.framePath) !== JSON.stringify(args.framePath))
+      throw new Error('Containing frame moved.');
+    const child = window.frames[args.childIndex];
+    const host = [...document.querySelectorAll('iframe,frame')].find(
+      (element) => element.contentWindow === child,
+    );
+    if (!child || !host || !visible(host) || disabled(host))
+      throw new Error('Containing iframe is unavailable or disabled.');
+    for (let ancestor = host; ancestor; ancestor = ancestor.parentElement) {
+      const style = getComputedStyle(ancestor);
+      if (style.rotate && !['none', '0deg'].includes(style.rotate))
+        throw new Error('Rotated iframe clicks are not supported.');
+      if (style.perspective && style.perspective !== 'none')
+        throw new Error('Perspective iframe clicks are not supported.');
+      if (
+        style.scale &&
+        style.scale !== 'none' &&
+        style.scale.split(/\s+/).some((value) => Number(value) <= 0)
+      )
+        throw new Error('Reflected iframe clicks are not supported.');
+      if (style.transform && style.transform !== 'none') {
+        const matrix = new DOMMatrixReadOnly(style.transform);
+        if (!matrix.is2D || matrix.b !== 0 || matrix.c !== 0 || matrix.a <= 0 || matrix.d <= 0)
+          throw new Error('Rotated, skewed, or reflected iframe clicks are not supported.');
+      }
+    }
+    const rect = host.getBoundingClientRect(),
+      style = getComputedStyle(host);
+    if (!host.offsetWidth || !host.offsetHeight || !args.viewportWidth || !args.viewportHeight)
+      throw new Error('Containing iframe has no usable viewport.');
+    const sx = rect.width / host.offsetWidth,
+      sy = rect.height / host.offsetHeight;
+    const edge = (name) => parseFloat(style[name]) || 0;
+    const left = (edge('borderLeftWidth') + edge('paddingLeft')) * sx;
+    const right = (edge('borderRightWidth') + edge('paddingRight')) * sx;
+    const top = (edge('borderTopWidth') + edge('paddingTop')) * sy;
+    const bottom = (edge('borderBottomWidth') + edge('paddingBottom')) * sy;
+    const x = rect.left + left + (args.x * (rect.width - left - right)) / args.viewportWidth;
+    const y = rect.top + top + (args.y * (rect.height - top - bottom)) / args.viewportHeight;
+    if (
+      x < 0 ||
+      x >= innerWidth ||
+      y < 0 ||
+      y >= innerHeight ||
+      document.elementFromPoint(x, y) !== host
+    )
+      throw new Error('Containing iframe is outside the viewport or covered by another element.');
+    return { x, y, ...context };
   }
   function clickPoint(element) {
     for (const rect of element.getClientRects()) {
@@ -134,13 +261,21 @@
       snapshotURL !== location.href ||
       !element?.isConnected ||
       !visible(element) ||
-      element.matches(':disabled') ||
-      element.closest('[aria-disabled="true"],[inert]')
+      disabled(element)
     )
       throw new Error('Click target changed or became disabled. Call read_page again.');
     const point = clickPoint(element);
     if (point.x !== args.x || point.y !== args.y)
       throw new Error('Click target moved. Call read_page again.');
+    if (args.framePath) {
+      const context = frameContext();
+      if (
+        JSON.stringify(context.framePath) !== JSON.stringify(args.framePath) ||
+        context.viewportWidth !== args.viewportWidth ||
+        context.viewportHeight !== args.viewportHeight
+      )
+        throw new Error('Click frame moved or resized. Call read_page again.');
+    }
     return { valid: true };
   }
   function run(tool, args = {}) {
@@ -153,25 +288,26 @@
       snapshotRevision++;
       snapshotURL = location.href;
       const elements = [];
-      for (const el of document.querySelectorAll(
-        'a[href],button,input,textarea,select,[role="button"],[contenteditable="true"]',
-      )) {
-        if (!visible(el) || elements.length >= 300) continue;
+      const candidates = [...document.querySelectorAll(interactiveSelector)].filter(
+        (el) =>
+          visible(el) &&
+          (!el.matches('label') ||
+            el.control?.matches('input[type="checkbox"],input[type="radio"]')),
+      );
+      // Portalled popup options often follow hundreds of table controls in DOM order.
+      // Keep open menus/listboxes/dialogs ahead of background controls at the ref cap.
+      candidates.sort(
+        (a, b) => Number(!a.closest(popupSelector)) - Number(!b.closest(popupSelector)),
+      );
+      for (const el of candidates.slice(0, 300)) {
         const ref = `e${++refCounter}`;
         refs.set(ref, el);
         const entry = {
           ref,
           tag: el.tagName.toLowerCase(),
-          type: el.type || el.getAttribute('role'),
-          label: (
-            el.getAttribute('aria-label') ||
-            el.labels?.[0]?.innerText ||
-            el.innerText ||
-            el.placeholder ||
-            el.name ||
-            ''
-          ).slice(0, 300),
-          disabled: !!el.disabled,
+          type: el.getAttribute('role') || el.type || null,
+          label: label(el),
+          disabled: disabled(el),
         };
         if (el.matches('input,textarea,select') && el.type !== 'password')
           entry.value = el.value?.slice(0, 2000);
@@ -180,6 +316,13 @@
             .slice(0, 100)
             .map((o) => ({ value: o.value, text: o.text }));
         if (el.matches('input[type="checkbox"],input[type="radio"]')) entry.checked = el.checked;
+        const checked = el.getAttribute('aria-checked');
+        if (checked === 'true' || checked === 'false') entry.checked = checked === 'true';
+        else if (checked === 'mixed') entry.checked = 'mixed';
+        const selected = el.getAttribute('aria-selected');
+        if (selected === 'true' || selected === 'false') entry.ariaSelected = selected === 'true';
+        const expanded = el.getAttribute('aria-expanded');
+        if (expanded === 'true' || expanded === 'false') entry.expanded = expanded === 'true';
         if (el.matches('a')) entry.href = el.href;
         elements.push(entry);
       }
@@ -189,9 +332,14 @@
         url: location.href,
         text: (document.body?.innerText || '').slice(0, 40000),
         elements,
+        totalElements: candidates.length,
+        elementsTruncated: candidates.length > elements.length,
+        ...frameContext(),
       };
     }
     if (tool === 'scroll') {
+      if (args.documentID && args.documentID !== documentID)
+        throw new Error('Frame changed. Call read_page again.');
       activity('Scrolling');
       cursor.style.opacity = '1';
       cursorShown = true;
@@ -205,7 +353,7 @@
     const revision = snapshotRevision;
     if (!el || !el.isConnected || !visible(el))
       throw new Error('Element ref expired. Call read_page again.');
-    if (el.disabled) throw new Error('Element is disabled');
+    if (disabled(el)) throw new Error('Element is disabled');
     el.scrollIntoView({ block: 'center' });
     return (async () => {
       await pointAt(
@@ -219,11 +367,17 @@
         !el.isConnected ||
         snapshotURL !== location.href ||
         !visible(el) ||
-        el.disabled
+        disabled(el)
       )
         throw new Error('Page changed before the action. Call read_page again.');
       if (tool === 'click') {
-        const target = { ...clickPoint(el), documentID, snapshotRevision, controlRevision };
+        const target = {
+          ...clickPoint(el),
+          documentID,
+          snapshotRevision,
+          controlRevision,
+          ...(window !== window.top ? frameContext() : {}),
+        };
         validateClick({ ...args, ...target });
         return { clickTarget: target };
       } else if (tool === 'type') {
@@ -275,9 +429,11 @@
   };
   globalThis.chrome?.runtime?.onMessage?.addListener(onMessage);
   globalThis.__opencodeChrome = {
-    version: 5,
+    version: 7,
     run,
     validateClick,
+    frameContext,
+    projectFramePoint,
     setEnabled,
     dispose: () => {
       setEnabled(false);

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Expose custom multiselect/listbox options, ARIA checkboxes, menu items, and associated checkbox labels as snapshot refs; prioritize open popups at the element cap and report truncation.
+- Add searched-option click regressions for Coupa-style command menus while preserving stale-ref, disabled-target, and covered-target checks.
+- Add frame-scoped snapshots and refs, targeted iframe reading/scrolling, and nested cross-origin iframe actions with validated main-viewport click geometry.
+- Revalidate each containing iframe before mouse-down; reject inaccessible, covered, moved, or unsupported transformed frame targets instead of guessing coordinates.
 - Replace synthetic DOM clicks with hit-tested browser-level mouse movement, press, and release using the Chrome debugger API on session-owned tabs.
 - Report clicks as dispatched with application acceptance unknown; revalidate after hover handlers and warn about uncertain outcomes after mouse-down.
 - Add the debugger permission and document extension reload, debugging banners, and DevTools conflicts.
