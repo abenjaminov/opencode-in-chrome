@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { recordingToolDefinitions } from './recording-tools.js';
 import { saveRecordingArtifacts } from './recording-artifacts.js';
+import { inspectionToolDefinitions } from './inspection-tools.js';
+import { saveInspectionArtifact } from './inspection-artifacts.js';
 
 function defineBrowserTools() {
   const ref = z
@@ -64,12 +66,17 @@ function defineBrowserTools() {
     ['navigate', 'Navigate a session-owned tab to an HTTP or HTTPS URL.', { tabID, url }],
     ['screenshot', 'Capture a session-owned tab’s viewport. This activates the tab.', { tabID }],
     ...recordingToolDefinitions,
+    ...inspectionToolDefinitions,
   ];
 }
 
 export const browserToolDefinitions = defineBrowserTools();
 
-export function registerBrowserTools(server, hub, { saveRecording = saveRecordingArtifacts } = {}) {
+export function registerBrowserTools(
+  server,
+  hub,
+  { saveRecording = saveRecordingArtifacts, saveInspection = saveInspectionArtifact } = {},
+) {
   for (const [name, description, inputSchema] of browserToolDefinitions) {
     server.registerTool(name, { description, inputSchema }, async (args, extra) => {
       try {
@@ -93,6 +100,10 @@ export function registerBrowserTools(server, hub, { saveRecording = saveRecordin
             .catch(() => {});
           return { content: [{ type: 'text', text: JSON.stringify(exported) }] };
         }
+        if (name === 'stop_cpu_profile' || name === 'stop_performance_trace')
+          return {
+            content: [{ type: 'text', text: JSON.stringify(await saveInspection(result)) }],
+          };
         return { content: [{ type: 'text', text: JSON.stringify(result) }] };
       } catch (error) {
         return { isError: true, content: [{ type: 'text', text: error.message }] };

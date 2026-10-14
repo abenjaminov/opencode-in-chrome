@@ -72,6 +72,12 @@ MCP cancellation and timeouts send `cancel` to the worker. Queued work is marked
 
 Session ownership is a tab-targeting boundary, not account isolation. Session IDs are trusted MCP routing metadata, not credentials. Page content is untrusted data. See [SECURITY.md](../SECURITY.md) for the complete threat model.
 
+## Tab inspection
+
+`bridge/inspection-tools.js` defines opt-in inspection and bounded network/console/profile tools. `extension/inspections.js` scopes event buffers to session/tab/generation, sanitizes captured metadata and invalidates IDs on navigation. `inspection-profiles.js` uses fixed CPU profiler commands and a bundled isolated-world PerformanceObserver helper, not global Chromium tracing. `inspection-privacy.js` bounds and redacts output.
+
+`debugger-sessions.js` coordinates reference-counted attachments across clicks, recording and inspection, including pending-attach cancellation and detach invalidation. `bridge/inspection-artifacts.js` persists sanitized profiles/timelines at generated private local paths and returns only paths/summaries. See [inspection contract](inspection.md).
+
 ## Verified recordings
 
 `bridge/recording-tools.js` declares strict schemas for an immutable task plan and start/run/finish/cancel tools. `extension/recordings.js` scopes plans to a session-owned tab, checks ordered preconditions/postconditions, and accepts only verified segments. `recording-capture.js` temporarily attaches the debugger, captures bounded JPEG screencast frames, and shares its attachment with the existing guarded click path. Nested actions inherit parent cancellation and must stay in that same tab.

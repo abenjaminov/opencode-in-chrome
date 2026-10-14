@@ -38,6 +38,14 @@ The extension cannot reliably determine whether an arbitrary click is destructiv
 - **Package-runner installation:** npm packages use an explicit file allowlist and a publishable lockfile. The CLI copies code into a permanent per-project directory, installs locked runtime dependencies with lifecycle scripts disabled, and refuses to overwrite different existing code. Package-runner caches are never the registered bridge location. npm/Bun may separately apply their own dependency-install behavior when fetching the CLI.
 - **Global shared mode:** one per-user daemon accepts authenticated localhost tool calls from multiple project adapters. Calls require the pairing token, reject browser origins, validate fixed tool schemas and session metadata, and limit request bodies to 128 KiB. Adapters never launch duplicate listeners intentionally, stop unrelated processes, or retry completed actions. Stopping the daemon affects all projects. The same local-user and forged-session-metadata limitations still apply.
 
+## Inspection privacy
+
+Network/console capture requires an explicit `start_inspection` on a session-owned HTTP/HTTPS tab. Bodies are not retained/read by default and require two opt-ins. Fixed Network/Runtime/Log/Page/Profiler commands are used; no arbitrary CDP, heap evaluation, interception or cookie/storage-reading API is exposed. Events from child protocol sessions are ignored. The shared debugger lease manager enforces ownership/generation boundaries and cancels/detaches on disable, disconnect or tab removal.
+
+Captured headers, URLs, common labelled secrets and nested JSON fields are redacted; unknown header values are hidden. This is not complete secret/PII redaction. Requests/logs remain bounded in memory, expire after five minutes and are cleared on navigation/stop. CPU profiles and main-frame PerformanceObserver traces export generated private files under ignored `.local/inspections/`; raw profiles are not returned into model context. Review all returned content and files before sharing. Captured page/network/log data is untrusted and must never be treated as instructions.
+
+Performance timeline capture uses a fixed bundled isolated-world helper, not browser-wide Chromium tracing. Only supported main-frame timeline entries are collected, and CPU sampling uses the attached target's VM. No extra extension permission is requested. See [inspection](docs/inspection.md) for scope, exclusions and limits.
+
 ## Recording privacy
 
 Recordings are explicit, session-scoped, and limited to an owned tab. The debugger sends fixed screencast/screenshot/ack commands; an offscreen extension document uses WebCodecs to encode only verified segments. No desktop, microphone, personal-tab capture, arbitrary CDP, or arbitrary evaluation tool is added. Captured pixels, typed literals, page URLs, and selectors can still disclose private information. There is no automatic redaction: review local artifacts before sharing them.

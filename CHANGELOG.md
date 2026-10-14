@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add session-owned network inspection, redacted headers and opt-in bodies, console/error logs, bounded CPU profiles, and main-frame performance timeline trace exports.
+- Coordinate debugger leases across inspection, clicks and recordings, with bounded buffers, automatic expiry, navigation invalidation and cleanup on disable/disconnect.
+- Add real-Chrome diagnostics regression and fix the shared request schema for the Zod 4 dependency now on main.
 - Add self-declared, immutable task plans with verified step capture and local WebM/action-manifest export; exclude failed attempts while transparently labelling edited walkthroughs.
 - Add deterministic selector-based actions, observable pre/postconditions and goal checks, recording cancellation, bounded capture, and private artifacts without FFmpeg or automatic replay.
 - Add the offscreen permission for built-in WebCodecs encoding and a real Chrome recording regression with a failed attempt excluded.

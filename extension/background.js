@@ -92,10 +92,9 @@ function connectSocket() {
         return;
       }
       commands.set(message.id, message);
-      const previous =
-        message.tool === 'cancel_recording'
-          ? Promise.resolve()
-          : queues.get(message.sessionID) || Promise.resolve();
+      const previous = ['cancel_recording', 'stop_inspection'].includes(message.tool)
+        ? Promise.resolve()
+        : queues.get(message.sessionID) || Promise.resolve();
       const next = previous
         .catch(() => {})
         .then(() => {

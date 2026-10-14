@@ -1,4 +1,6 @@
 import { Recordings } from './recordings.js';
+import { DebuggerSessions } from './debugger-sessions.js';
+import { Inspections } from './inspections.js';
 
 export class SessionBrowser {
   bindings = {};
@@ -9,6 +11,8 @@ export class SessionBrowser {
   constructor(chrome, publish = () => {}) {
     this.chrome = chrome;
     this.publish = publish;
+    this.debuggers = new DebuggerSessions(chrome, this);
+    this.inspections = new Inspections(chrome, this);
     this.recordings = new Recordings(chrome, this);
   }
 
@@ -117,7 +121,7 @@ export class SessionBrowser {
     );
     if (changeInfo.url) this.documents.delete(tabID);
     if (changeInfo.url && !/^https?:\/\//.test(changeInfo.url))
-      await this.recordings.removed(tabID);
+      await Promise.all([this.recordings.removed(tabID), this.inspections.remove(tabID)]);
     if (changeInfo.status === 'complete') await this.overlay(tabID);
     await this.save(sessionID);
   }
@@ -163,13 +167,15 @@ export class SessionBrowser {
     const binding = (this.bindings[sessionID] ||= { tabs: [] });
     binding.paused = paused;
     binding.generation = crypto.randomUUID();
+    await Promise.all(binding.tabs.map((tab) => this.inspections.remove(tab.id)));
     await this.save(sessionID);
     if (paused) this.publish({ type: 'pause', sessionID });
   }
 
   async remove(tabID) {
     this.documents.delete(tabID);
-    await this.recordings.removed(tabID);
+    await Promise.all([this.recordings.removed(tabID), this.inspections.remove(tabID)]);
+    await this.debuggers.clear(tabID);
     for (const [sessionID, binding] of Object.entries(this.bindings)) {
       if (!binding.tabs.some((tab) => tab.id === tabID)) continue;
       binding.tabs = binding.tabs.filter((tab) => tab.id !== tabID);
@@ -206,7 +212,13 @@ export class SessionBrowser {
         this.chrome.tabs.sendMessage(tab.id, { type: 'opencode-disable' }).catch(() => {}),
       ),
     );
-    await Promise.all([invalidated, ...notifications, this.recordings.suspend()]);
+    await Promise.all([
+      invalidated,
+      ...notifications,
+      this.recordings.suspend(),
+      this.inspections.suspend(),
+    ]);
+    await this.debuggers.clear();
     await this.refreshIndicators();
   }
 
@@ -231,6 +243,20 @@ export class SessionBrowser {
     if (command.tool === 'run_recording_step') return this.recordings.step(command);
     if (command.tool === 'finish_recording') return this.recordings.finish(command);
     if (command.tool === 'cancel_recording') return this.recordings.cancel(command);
+    if (
+      [
+        'start_inspection',
+        'stop_inspection',
+        'network_requests',
+        'network_request',
+        'console_logs',
+        'start_cpu_profile',
+        'stop_cpu_profile',
+        'start_performance_trace',
+        'stop_performance_trace',
+      ].includes(command.tool)
+    )
+      return this.inspections.run(command);
     if (command.tool === 'open_tab') {
       const url = args.url || 'about:blank';
       if (url !== 'about:blank' && !/^https?:\/\//.test(url))
@@ -374,19 +400,18 @@ export class SessionBrowser {
     if (this.clickingTabs.has(tabID)) throw new Error('Another click is in progress on this tab.');
     this.clickingTabs.add(tabID);
     const debuggee = { tabId: tabID };
-    let attached = false;
+    let lease;
     let pressAttempted = false;
     try {
       await this.#validateClick(command, tabID, target);
-      if (!this.recordings.capture.owns(command, tabID))
-        try {
-          await this.chrome.debugger.attach(debuggee, '1.3');
-          attached = true;
-        } catch {
-          throw new Error(
-            'Could not attach browser input. Close DevTools on this tab and check the extension debugger permission. No click was dispatched.',
-          );
-        }
+      try {
+        lease = await this.debuggers.acquire(command, tabID);
+      } catch {
+        this.assert(command);
+        throw new Error(
+          'Could not attach browser input. Close DevTools on this tab and check the extension debugger permission. No click was dispatched.',
+        );
+      }
       this.#assertClick(command, tabID, target);
       const point = { x: target.x, y: target.y };
       await this.chrome.debugger.sendCommand(debuggee, 'Input.dispatchMouseEvent', {
@@ -421,7 +446,7 @@ export class SessionBrowser {
         );
       throw error;
     } finally {
-      if (attached) await this.chrome.debugger.detach(debuggee).catch(() => {});
+      await this.debuggers.release(lease);
       this.clickingTabs.delete(tabID);
     }
   }

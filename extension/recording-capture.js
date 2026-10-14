@@ -32,6 +32,8 @@ export class RecordingCapture {
 
   assert(capture) {
     if (capture.closed || this.active !== capture) throw new Error('Recording capture stopped.');
+    if (!this.browser.debuggers.valid(capture.lease))
+      throw new Error('Recording debugger attachment stopped.');
     this.browser.assert(capture.command);
     if (this.browser.owner(capture.tabID)?.[0] !== capture.command.sessionID)
       throw new Error('Recording tab ownership changed.');
@@ -90,8 +92,8 @@ export class RecordingCapture {
     };
     this.active = capture;
     try {
-      capture.attachPromise = this.chrome.debugger.attach({ tabId: tabID }, '1.3').then(() => {
-        capture.attached = true;
+      capture.attachPromise = this.browser.debuggers.acquire(command, tabID).then((lease) => {
+        capture.lease = lease;
       });
       await capture.attachPromise;
       this.assert(capture);
@@ -128,12 +130,12 @@ export class RecordingCapture {
   async cleanup(capture) {
     await capture.attachPromise?.catch(() => {});
     await Promise.allSettled(capture.pending);
-    if (capture.attached) {
+    if (this.browser.debuggers.valid(capture.lease)) {
       await this.chrome.debugger
         .sendCommand({ tabId: capture.tabID }, 'Page.stopScreencast')
         .catch(() => {});
-      await this.chrome.debugger.detach({ tabId: capture.tabID }).catch(() => {});
     }
+    await this.browser.debuggers.release(capture.lease);
     if (this.active === capture) this.active = null;
     return capture;
   }
