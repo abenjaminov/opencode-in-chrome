@@ -32,7 +32,15 @@ export async function startTestBrowser(t) {
   });
   const endpoint = await new Promise((resolve, reject) => {
     let output = '';
-    const timeout = setTimeout(() => reject(new Error('Test Chrome did not start.')), 10000);
+    const timeout = setTimeout(
+      () =>
+        reject(
+          new Error(
+            `Test Chrome did not start. Startup diagnostics: ${output.slice(-2000) || 'no stderr output'}`,
+          ),
+        ),
+      20000,
+    );
     child.once('error', reject);
     child.once('exit', () => reject(new Error('Test Chrome exited before starting.')));
     child.stderr.on('data', (chunk) => {
