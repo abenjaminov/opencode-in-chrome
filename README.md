@@ -50,6 +50,12 @@ The agent handles terminal commands, MCP registration, diagnostics, and final ve
 
 See [installation prompt details](docs/install-prompt.md) for setup boundaries and expected results. The manual commands below remain available if you prefer doing the setup yourself.
 
+## Record a verified task walkthrough
+
+Chrome tools can now declare a task and immutable plan, record each step, discard failed attempts, and export an **edited WebM video plus a deterministic action manifest**. Use `start_recording` → `run_recording_step` → `finish_recording`; `cancel_recording` abandons a plan. Every step needs observable preconditions and postconditions, and final goal checks must pass before export. Files stay local under `.local/recordings/`; nothing is uploaded or replayed automatically.
+
+This captures session-owned browser tabs, not the OpenCode terminal or full desktop. Removing mistakes from the walkthrough does not undo their side effects. Reload the extension to accept the new `offscreen` permission and reconnect `chrome` to discover the tools. See [recording workflow, examples, limits, and replay](docs/recordings.md).
+
 ## Package-runner install
 
 The CLI is ready for npm publication as `@asaf-labs/opencode-in-chrome`. The registry commands below become available after a maintainer publishes the package; pushing this repository does not publish it.

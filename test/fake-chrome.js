@@ -19,6 +19,8 @@ export function fakeChrome() {
   const groupState = new Map();
   const debuggerCalls = [];
   const debuggerTabs = new Set();
+  const debuggerEvents = new Set(),
+    debuggerDetach = new Set();
   let nextGroupID = 10;
   const get = async (id) => {
     if (!tabState.has(id)) throw new Error('No tab');
@@ -33,6 +35,14 @@ export function fakeChrome() {
     debuggerCalls,
     debuggerTabs,
     debugger: {
+      onEvent: {
+        addListener: (listener) => debuggerEvents.add(listener),
+        removeListener: (listener) => debuggerEvents.delete(listener),
+      },
+      onDetach: {
+        addListener: (listener) => debuggerDetach.add(listener),
+        removeListener: (listener) => debuggerDetach.delete(listener),
+      },
       attach: async (target, version) => {
         debuggerCalls.push({ action: 'attach', target, version });
         if (debuggerTabs.has(target.tabId)) throw new Error('Already attached');
@@ -41,6 +51,7 @@ export function fakeChrome() {
       sendCommand: async (target, method, params) => {
         if (!debuggerTabs.has(target.tabId)) throw new Error('Not attached');
         debuggerCalls.push({ action: 'send', target, method, params });
+        if (method === 'Page.captureScreenshot') return { data: 'aW1hZ2U=' };
       },
       detach: async (target) => {
         debuggerCalls.push({ action: 'detach', target });
@@ -98,11 +109,28 @@ export function fakeChrome() {
         },
       },
     },
+    offscreen: { createDocument: async () => {} },
+    runtime: {
+      getURL: (file) => `chrome-extension://test/${file}`,
+      getContexts: async () => [{ contextType: 'OFFSCREEN_DOCUMENT' }],
+      sendMessage: async ({ segments = [] }) => ({
+        video: 'GkXfow==',
+        timeline: segments.map((_segment, index) => ({
+          startMs: index * 1000,
+          endMs: (index + 1) * 1000,
+        })),
+      }),
+    },
     scripting: {
       executeScript: async (request) => {
         scriptCalls.push(request);
         if (request.files) return [];
         const tab = await get(request.target.tabId);
+        if (request.args?.[0] === 'resolve_target')
+          return [{ result: { ref: 'e1', documentID: `doc-${tab.id}` } }];
+        if (request.args?.[0]?.checks) return [{ result: { passed: true } }];
+        if (request.args?.[0]?.selector)
+          return [{ result: { ref: 'e1', documentID: `doc-${tab.id}` } }];
         if (request.args?.[0] === 'click')
           return [
             {

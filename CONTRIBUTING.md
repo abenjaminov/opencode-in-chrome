@@ -31,6 +31,8 @@ Publication is a separate maintainer action, not part of pushing a commit or the
 
 When changing the extension, reload it at `chrome://extensions`. When changing bridge code, reconnect the `chrome` server in OpenCode's `/mcps` interface. After changing permissions, Chrome may require enabling the extension again.
 
+The real-browser suite also verifies the [recording workflow](docs/recordings.md): it declares a task, excludes a failed attempt, captures verified actions including navigation, encodes WebM without FFmpeg, and checks playback metadata. Set `SAVE_RECORDING_DEMO=1` alongside `CHROME_BINARY` to retain its harmless local video/manifest under `.local/recordings/`. Production accounts and permission prompts are never driven by this test.
+
 ## Pull requests
 
 External contributors can fork this public MIT-licensed repo, create a branch, run `npm run check`, and open a PR against `main`. A PR does not grant push or merge access. Keep changes focused and include verification evidence.
