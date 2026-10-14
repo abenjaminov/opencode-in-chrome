@@ -1,5 +1,5 @@
 (() => {
-  if (globalThis.__opencodeChrome?.version === 5) return;
+  if (globalThis.__opencodeChrome?.version === 6) return;
   globalThis.__opencodeChrome?.dispose?.();
   globalThis.__opencodeChrome?.setEnabled?.(false);
   let refs = new Map(),
@@ -122,6 +122,31 @@
     }
     throw new Error('Click target is outside the viewport or covered by another element.');
   }
+  function uniqueSelector(selector) {
+    try {
+      return document.querySelectorAll(selector).length === 1;
+    } catch {
+      return false;
+    }
+  }
+  function selectorFor(element) {
+    const parts = [];
+    for (let current = element; current && parts.length < 16; current = current.parentElement) {
+      for (const attribute of ['id', 'data-testid', 'aria-label']) {
+        const value = current.getAttribute(attribute);
+        if (!value || /[\r\n]/.test(value)) continue;
+        const prefix = `[${attribute}=${JSON.stringify(value)}]`;
+        const selector = [prefix, ...parts].join(' > ');
+        if (uniqueSelector(prefix) && uniqueSelector(selector)) return selector;
+      }
+      const siblings = [...(current.parentElement?.children || [current])].filter(
+        (sibling) => sibling.localName === current.localName,
+      );
+      parts.unshift(`${current.localName}:nth-of-type(${siblings.indexOf(current) + 1})`);
+      const selector = parts.join(' > ');
+      if (uniqueSelector(selector)) return selector;
+    }
+  }
   function validateClick(args) {
     if (args.commandID && cancelledActions.has(args.commandID))
       throw new Error('Browser action cancelled before execution.');
@@ -147,6 +172,52 @@
     if (args.commandID && cancelledActions.has(args.commandID))
       throw new Error('Browser action cancelled before execution.');
     if (!enabled) throw new Error('Browser access is disabled.');
+    if (tool === 'resolve_target') {
+      const matches = document.querySelectorAll(args.selector);
+      if (matches.length !== 1 || !visible(matches[0]))
+        throw new Error('Recorded selector must match exactly one visible element.');
+      const element = matches[0];
+      if (args.rejectPassword && element.type === 'password')
+        throw new Error('Password fields cannot be included in a replayable recording.');
+      snapshotRevision++;
+      snapshotURL = location.href;
+      refs = new Map();
+      const ref = `e${++refCounter}`;
+      refs.set(ref, element);
+      return { ref, documentID };
+    }
+    if (tool === 'inspect_conditions') {
+      return {
+        passed: args.checks.every((check) => {
+          if (check.url && location.href !== new URL(check.url).href) return false;
+          if (!check.selector) return !!check.url;
+          const elements = document.querySelectorAll(check.selector);
+          if (!elements.length)
+            return (
+              check.visible === false &&
+              check.text === undefined &&
+              check.value === undefined &&
+              check.checked === undefined
+            );
+          if (elements.length !== 1) return false;
+          const element = elements[0];
+          if (check.visible !== undefined && visible(element) !== check.visible) return false;
+          if (
+            check.text !== undefined &&
+            (element.innerText || element.textContent || '').replace(/\s+/g, ' ').trim() !==
+              check.text
+          )
+            return false;
+          if (
+            check.value !== undefined &&
+            (element.type === 'password' || element.value !== check.value)
+          )
+            return false;
+          if (check.checked !== undefined && element.checked !== check.checked) return false;
+          return true;
+        }),
+      };
+    }
     if (tool === 'read_page') {
       activity('Reading page');
       refs = new Map();
@@ -173,6 +244,7 @@
           ).slice(0, 300),
           disabled: !!el.disabled,
         };
+        entry.selector = selectorFor(el);
         if (el.matches('input,textarea,select') && el.type !== 'password')
           entry.value = el.value?.slice(0, 2000);
         if (el.matches('select'))
@@ -275,7 +347,7 @@
   };
   globalThis.chrome?.runtime?.onMessage?.addListener(onMessage);
   globalThis.__opencodeChrome = {
-    version: 5,
+    version: 6,
     run,
     validateClick,
     setEnabled,

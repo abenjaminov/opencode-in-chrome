@@ -92,7 +92,10 @@ function connectSocket() {
         return;
       }
       commands.set(message.id, message);
-      const previous = queues.get(message.sessionID) || Promise.resolve();
+      const previous =
+        message.tool === 'cancel_recording'
+          ? Promise.resolve()
+          : queues.get(message.sessionID) || Promise.resolve();
       const next = previous
         .catch(() => {})
         .then(() => {
@@ -182,6 +185,7 @@ async function handle(message) {
 }
 
 chrome.runtime.onMessage.addListener((message, sender, respond) => {
+  if (message.target === 'recording-offscreen') return false;
   if (sender.id !== chrome.runtime.id || sender.tab) return false;
   handle(message).then(
     (result) => respond({ result }),

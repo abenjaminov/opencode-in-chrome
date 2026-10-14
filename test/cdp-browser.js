@@ -89,6 +89,18 @@ export async function startTestBrowser(t) {
   return {
     command,
     evaluate,
+    context: async () => {
+      const { frameTree } = await command('Page.getFrameTree');
+      const { executionContextId } = await command('Page.createIsolatedWorld', {
+        frameId: frameTree.frame.id,
+        worldName: 'opencode-test',
+      });
+      return executionContextId;
+    },
+    onEvent: (method, callback) =>
+      events.on(method, (message) => {
+        if (message.sessionId === sessionId) callback(message.params);
+      }),
     navigate: async (url) => {
       const loaded = once(events, 'Page.loadEventFired');
       const result = await command('Page.navigate', { url });

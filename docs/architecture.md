@@ -72,6 +72,12 @@ MCP cancellation and timeouts send `cancel` to the worker. Queued work is marked
 
 Session ownership is a tab-targeting boundary, not account isolation. Session IDs are trusted MCP routing metadata, not credentials. Page content is untrusted data. See [SECURITY.md](../SECURITY.md) for the complete threat model.
 
+## Verified recordings
+
+`bridge/recording-tools.js` declares strict schemas for an immutable task plan and start/run/finish/cancel tools. `extension/recordings.js` scopes plans to a session-owned tab, checks ordered preconditions/postconditions, and accepts only verified segments. `recording-capture.js` temporarily attaches the debugger, captures bounded JPEG screencast frames, and shares its attachment with the existing guarded click path. Nested actions inherit parent cancellation and must stay in that same tab.
+
+`recording-offscreen.js` receives authenticated extension-only encoding messages. `video-encoder.js` samples accepted segments onto a captioned canvas, encodes VP8 through WebCodecs, and `webm.js` builds the container with a deterministic timeline. `bridge/recording-artifacts.js` saves video/manifest into generated private `.local/recordings/` directories before returning only paths. No capture happens outside planned steps; excluded attempts are counted, not rolled back. See [recordings](recordings.md) for the contract and limitations.
+
 ## Verification
 
 `npm run check` runs lint, formatting, metadata checks, and automated tests. Tests cover authenticated transport with a real MCP client/server pair, session ownership with a simulated Chrome API, the worker readiness lifecycle, configuration validation, and DOM/cancellation behavior with jsdom. `CHROME_BINARY=/path/to/chrome npm run test:browser` uses an isolated real Chrome profile and local page to verify trusted pointer/mouse events and hit-testing. Its scripting/debugger adapter drives the same SessionBrowser click path through a test CDP connection; actual extension attachment and permission prompts still require the manual smoke test in [CONTRIBUTING.md](../CONTRIBUTING.md).

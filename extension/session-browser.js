@@ -1,3 +1,5 @@
+import { Recordings } from './recordings.js';
+
 export class SessionBrowser {
   bindings = {};
   documents = new Map();
@@ -7,6 +9,7 @@ export class SessionBrowser {
   constructor(chrome, publish = () => {}) {
     this.chrome = chrome;
     this.publish = publish;
+    this.recordings = new Recordings(chrome, this);
   }
 
   async restore(saved) {
@@ -113,6 +116,8 @@ export class SessionBrowser {
       this.info(tab),
     );
     if (changeInfo.url) this.documents.delete(tabID);
+    if (changeInfo.url && !/^https?:\/\//.test(changeInfo.url))
+      await this.recordings.removed(tabID);
     if (changeInfo.status === 'complete') await this.overlay(tabID);
     await this.save(sessionID);
   }
@@ -123,7 +128,20 @@ export class SessionBrowser {
   }
 
   assert(command) {
-    if (command.cancelled) throw new Error('Browser action cancelled');
+    if (command.cancelled || command.recordingParent?.cancelled)
+      throw new Error('Browser action cancelled');
+    if (command.recordingParent) {
+      const capture = this.recordings.capture.active;
+      if (
+        !capture ||
+        capture.closed ||
+        capture.command !== command.recordingParent ||
+        capture.error
+      )
+        throw new Error('Recorded step capture stopped or failed.');
+      if (Date.now() - capture.started > 15000)
+        throw new Error('Recorded step exceeded 15 seconds.');
+    }
     if (!this.enabled) throw new Error('Enable browser access in Bridge settings first.');
     if (!/^ses[\w-]+$/.test(command.sessionID || '') || !command.generation)
       throw new Error('Invalid browser session');
@@ -151,6 +169,7 @@ export class SessionBrowser {
 
   async remove(tabID) {
     this.documents.delete(tabID);
+    await this.recordings.removed(tabID);
     for (const [sessionID, binding] of Object.entries(this.bindings)) {
       if (!binding.tabs.some((tab) => tab.id === tabID)) continue;
       binding.tabs = binding.tabs.filter((tab) => tab.id !== tabID);
@@ -187,12 +206,14 @@ export class SessionBrowser {
         this.chrome.tabs.sendMessage(tab.id, { type: 'opencode-disable' }).catch(() => {}),
       ),
     );
-    await Promise.all([invalidated, ...notifications]);
+    await Promise.all([invalidated, ...notifications, this.recordings.suspend()]);
     await this.refreshIndicators();
   }
 
   async cancel(command) {
     command.cancelled = true;
+    if (command.tool === 'finish_recording')
+      await this.recordings.abortExport(command.args.recordingID);
     if (
       command.executingTabID !== undefined &&
       this.owner(command.executingTabID)?.[0] === command.sessionID
@@ -206,6 +227,10 @@ export class SessionBrowser {
   async run(command) {
     const binding = this.assert(command),
       args = command.args || {};
+    if (command.tool === 'start_recording') return this.recordings.start(command);
+    if (command.tool === 'run_recording_step') return this.recordings.step(command);
+    if (command.tool === 'finish_recording') return this.recordings.finish(command);
+    if (command.tool === 'cancel_recording') return this.recordings.cancel(command);
     if (command.tool === 'open_tab') {
       const url = args.url || 'about:blank';
       if (url !== 'about:blank' && !/^https?:\/\//.test(url))
@@ -353,14 +378,15 @@ export class SessionBrowser {
     let pressAttempted = false;
     try {
       await this.#validateClick(command, tabID, target);
-      try {
-        await this.chrome.debugger.attach(debuggee, '1.3');
-      } catch {
-        throw new Error(
-          'Could not attach browser input. Close DevTools on this tab and check the extension debugger permission. No click was dispatched.',
-        );
-      }
-      attached = true;
+      if (!this.recordings.capture.owns(command, tabID))
+        try {
+          await this.chrome.debugger.attach(debuggee, '1.3');
+          attached = true;
+        } catch {
+          throw new Error(
+            'Could not attach browser input. Close DevTools on this tab and check the extension debugger permission. No click was dispatched.',
+          );
+        }
       this.#assertClick(command, tabID, target);
       const point = { x: target.x, y: target.y };
       await this.chrome.debugger.sendCommand(debuggee, 'Input.dispatchMouseEvent', {
@@ -398,5 +424,47 @@ export class SessionBrowser {
       if (attached) await this.chrome.debugger.detach(debuggee).catch(() => {});
       this.clickingTabs.delete(tabID);
     }
+  }
+
+  async recordingInspect(command, tabID, checks) {
+    this.assert(command);
+    if (this.owner(tabID)?.[0] !== command.sessionID)
+      throw new Error('Recording requires an owned tab.');
+    const tab = await this.chrome.tabs.get(tabID);
+    if (!/^https?:\/\//.test(tab.url || ''))
+      throw new Error('Recording requires an HTTP/HTTPS page.');
+    if (tab.status === 'loading') return { passed: false };
+    await this.chrome.scripting.executeScript({ target: { tabId: tabID }, files: ['content.js'] });
+    this.assert(command);
+    const results = await this.chrome.scripting.executeScript({
+      target: { tabId: tabID },
+      func: (input) => globalThis.__opencodeChrome.run('inspect_conditions', input),
+      args: [{ checks }],
+    });
+    this.assert(command);
+    return { passed: results[0]?.result?.passed === true };
+  }
+
+  async recordingAction(command, tabID, action) {
+    command.executingTabID = tabID;
+    const { selector, ...args } = action;
+    const nested = {
+      ...command,
+      recordingParent: command,
+      tool: action.tool,
+      args: { ...args, tabID },
+    };
+    delete nested.args.tool;
+    if (selector) {
+      const target = await this.#pageAction(
+        { ...nested, tool: 'resolve_target', args: { selector, rejectPassword: true } },
+        await this.chrome.tabs.get(tabID),
+      );
+      this.assert(command);
+      if (!target?.ref || !target.documentID) throw new Error('Recorded selector did not resolve.');
+      this.documents.set(tabID, target.documentID);
+      nested.args.ref = target.ref;
+    }
+    return this.run(nested);
   }
 }
