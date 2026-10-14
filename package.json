@@ -1,7 +1,31 @@
 {
-  "name": "opencode-in-chrome",
-  "version": "0.4.0",
-  "private": true,
+  "name": "@asaf-labs/opencode-in-chrome",
+  "version": "0.5.0",
+  "bin": {
+    "opencode-in-chrome": "scripts/cli.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "bridge/*.js",
+    "extension/*.js",
+    "extension/*.json",
+    "extension/*.html",
+    "extension/*.css",
+    "scripts/cli.js",
+    "scripts/cli-installation.js",
+    "scripts/installation.js",
+    "scripts/install.js",
+    "scripts/pair.js",
+    "scripts/pairing.js",
+    "scripts/doctor.js",
+    "scripts/diagnostics.js",
+    ".opencode/skills/install-opencode-in-chrome/SKILL.md",
+    "examples/permissions.jsonc",
+    "SECURITY.md",
+    "npm-shrinkwrap.json"
+  ],
   "license": "MIT",
   "description": "Session-owned Chrome tabs for OpenCode through an authenticated local MCP bridge.",
   "repository": {
@@ -13,6 +37,8 @@
     "node": ">=24"
   },
   "scripts": {
+    "prepack": "node scripts/prepare-package.js",
+    "prepublishOnly": "npm run check",
     "setup": "node bridge/setup.js",
     "install:opencode": "node scripts/install.js",
     "doctor": "node scripts/doctor.js",

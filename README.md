@@ -50,7 +50,37 @@ The agent handles terminal commands, MCP registration, diagnostics, and final ve
 
 See [installation prompt details](docs/install-prompt.md) for setup boundaries and expected results. The manual commands below remain available if you prefer doing the setup yourself.
 
-## Easy install (recommended)
+## Package-runner install
+
+The CLI is ready for npm publication as `@asaf-labs/opencode-in-chrome`. The registry commands below become available after a maintainer publishes the package; pushing this repository does not publish it.
+
+From the OpenCode project that should get browser tools:
+
+```sh
+npx @asaf-labs/opencode-in-chrome install
+```
+
+Or with Bun installed:
+
+```sh
+bunx @asaf-labs/opencode-in-chrome install
+```
+
+Both require **Node.js 24+, npm, Chrome 120+, and OpenCode V2**. Bun launches the Node CLI; it does not replace the bridge runtime. Do not pass `--bun`. The installer checks prerequisites, installs locked runtime dependencies without lifecycle scripts, registers `chrome` for the current directory, and opens private pairing instructions. It does not install Node or change your default runtime.
+
+Options: `--project "/absolute/path/to/project"`, `--port 8791`, and `--no-open`. On Windows, use `npx.cmd` if PowerShell blocks `npx`.
+
+The bridge and extension are copied to a permanent **per-project** installation, never registered from the npm/Bun cache:
+
+- macOS: `~/Library/Application Support/opencode-in-chrome/projects/<project-id>`
+- Windows: `%LOCALAPPDATA%\opencode-in-chrome\projects\<project-id>`
+- Linux: `$XDG_DATA_HOME/opencode-in-chrome/projects/<project-id>` or `~/.local/share/opencode-in-chrome/projects/<project-id>`
+
+Repeat installs reuse identical code and preserve pairing. If different code or unrecognized files already occupy the destination, installation stops rather than overwriting them. Upgrades currently require manually moving the old permanent installation aside after disconnecting its MCP and preserving its private `.local/` settings. If `chrome` is already configured from a checkout, keep using that checkout; the CLI will not silently replace it on first install. Each project still needs an available bridge port, and one extension instance connects to one bridge at a time.
+
+Complete the pairing page's Chrome steps, then run `npm run doctor` from the printed installation directory. Browser readiness is separate from MCP connectivity.
+
+## Install from source (available now)
 
 Requires Node.js 24+, Chrome 120+, and OpenCode V2 on your PATH. Choose the existing project that should get browser tools, then run:
 
@@ -70,9 +100,11 @@ npm.cmd run install:opencode -- --project "C:\path\to\your-project"
 npm.cmd run pair
 ```
 
-The installer installs missing dependencies, generates or preserves pairing settings, registers `chrome` MCP in the selected project, and copies the installation skill there. It uses OpenCode's CLI to preserve unrelated configuration. It does not print the token or silently change approval rules. Keep the checkout in a permanent location.
+The installer installs missing runtime dependencies, generates or preserves pairing settings, registers `chrome` MCP in the selected project, and copies the installation skill there. It uses OpenCode's CLI to preserve unrelated configuration. It does not print the token or silently change approval rules. Keep the checkout in a permanent location.
 
 `pair` opens a **private local page** with the URL, a token-copy button, and Chrome instructions. Complete [Chrome setup](#one-time-chrome-setup) in a dedicated profile. The local page contains credentials; keep it out of agent context and screenshots. It opens in your OS default browser, so choose the intended Chrome profile yourself. Use `npm run pair -- --no-open` to generate it without opening a browser.
+
+The pairing page automatically selects macOS, Windows, or Linux instructions for the computer running `pair`. You can switch tabs manually and copy the extension folder path without browsing through folders. On macOS, click **Load unpacked**, press **⌘⇧G (Command + Shift + G)** in the folder picker, paste the copied path, press **Return**, and click **Select**. On Windows, paste the path into the folder picker's address bar, press **Enter**, and click **Select Folder**.
 
 Then verify:
 
@@ -339,7 +371,7 @@ npm run check
 
 Tests exercise real MCP discovery/calls over authenticated WebSocket transport, automatic session tab creation, multi-tab operations, cross-session/personal-tab isolation, reconnect persistence, disabling, stale refs, and DOM form interaction. A browser smoke test requires loading the unpacked extension in Chrome.
 
-GitHub Actions runs lint, formatting, version consistency, and tests on Windows and Linux with Node.js 24. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and smoke-test instructions, [docs/architecture.md](docs/architecture.md) for the implementation, and [CHANGELOG.md](CHANGELOG.md) for updates.
+GitHub Actions runs lint, formatting, version consistency, and tests on Windows, macOS, and Linux with Node.js 24. See [CONTRIBUTING.md](CONTRIBUTING.md) for development and smoke-test instructions, [docs/architecture.md](docs/architecture.md) for the implementation, and [CHANGELOG.md](CHANGELOG.md) for updates.
 
 To build release archives locally, run `npm run package`. `dist/` contains the standalone project ZIP, extension-only ZIP, and SHA-256 checksums. Packaging uses an explicit source allowlist and excludes credentials, installed dependencies, and Git state. See [owner settings](docs/maintainer-setup.md) for review enforcement and private vulnerability reporting.
 

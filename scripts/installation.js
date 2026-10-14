@@ -4,6 +4,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { stripVTControlCharacters } from 'node:util';
+import { setTimeout } from 'node:timers/promises';
 import { ensureConfig } from '../bridge/config.js';
 import { portAvailable, inspectBridge } from './diagnostics.js';
 
@@ -60,6 +61,7 @@ export async function install({
   checkPort = portAvailable,
   checkBridge = inspectBridge,
   npmCLI = process.env.npm_execpath,
+  wait = setTimeout,
 }) {
   if (Number(process.versions.node.split('.')[0]) < 24) throw new Error('Node.js 24+ is required.');
   if (!(await stat(project)).isDirectory())
@@ -88,7 +90,7 @@ export async function install({
   if (!dependenciesInstalled) {
     if (!npmCLI)
       throw new Error('Run this installer through npm run install:opencode, or run npm ci first.');
-    run(process.execPath, [npmCLI, 'ci'], root);
+    run(process.execPath, [npmCLI, 'ci', '--omit=dev', '--ignore-scripts'], root);
   }
   const config = await ensureConfig({ port }, pathToFileURL(path.join(root, '.local/config.json')));
   if (!(await checkPort(config.port))) {
@@ -106,9 +108,17 @@ export async function install({
   );
   await mkdir(path.dirname(destination), { recursive: true });
   if (existing === null) await writeFile(destination, skill, { flag: 'wx' });
-  const listing = run('opencode', ['mcp', 'list'], project, { capture: true });
-  const text = stripVTControlCharacters(listing?.stdout || '');
-  if (!/^\s*(?:[✓✔●]\s*)?chrome\s+connected\b/m.test(text)) {
+  let connected = false;
+  for (let attempt = 0; attempt < 6; attempt++) {
+    if (attempt > 0) await wait(500);
+    const listing = run('opencode', ['mcp', 'list'], project, { capture: true });
+    const text = stripVTControlCharacters(listing?.stdout || '');
+    if (/^\s*(?:[✓✔●]\s*)?chrome\s+connected\b/m.test(text)) {
+      connected = true;
+      break;
+    }
+  }
+  if (!connected) {
     throw new Error(
       "Chrome MCP was registered but is not confirmed connected in the target project. Disconnect chrome in the previous project if it holds the port, then reconnect it in this project's /mcps and run opencode mcp list. The installation skill was copied successfully.",
     );

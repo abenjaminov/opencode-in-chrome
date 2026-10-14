@@ -110,8 +110,30 @@ test('installer does not claim success when target MCP failed despite an already
       npmCLI: '/npm-cli.js',
       checkPort: async () => false,
       checkBridge: async () => [{ id: 'bridge', status: 'pass' }],
+      wait: async () => {},
     }),
     /not confirmed connected in the target project/,
   );
   assert.equal(await readFile(path.join(f.project, f.skill), 'utf8'), 'installation skill');
+});
+
+test('installer retries MCP discovery while registration takes effect', async (t) => {
+  const f = await fixture(t);
+  let listings = 0;
+  const delays = [];
+  await install({
+    ...f,
+    npmCLI: '/npm-cli.js',
+    checkPort: async () => true,
+    wait: async (duration) => delays.push(duration),
+    run: (_command, args) => {
+      if (args.includes('list')) {
+        listings++;
+        return { stdout: listings < 3 ? '' : '✓ chrome connected\n' };
+      }
+      return { stdout: '' };
+    },
+  });
+  assert.equal(listings, 3);
+  assert.deepEqual(delays, [500, 500]);
 });
