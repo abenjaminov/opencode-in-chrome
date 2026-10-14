@@ -21,9 +21,12 @@ import { install, repositoryRoot, runCommand } from '../scripts/installation.js'
 import { readConfig } from '../bridge/config.js';
 import { sharedStatus } from '../bridge/shared-process.js';
 
-async function fixture(t) {
+async function fixture(t, cleanup) {
   const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'chrome-cli-')));
-  t.after(() => rm(directory, { recursive: true, force: true }));
+  t.after(async () => {
+    await cleanup?.();
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
   const project = path.join(directory, 'project with spaces');
   const root = path.join(directory, 'permanent installation');
   await mkdir(project);
@@ -308,7 +311,17 @@ test('a full permanent install remains runnable after the package-runner cache i
 });
 
 test('a full global install runs its shared daemon outside the package cache', async (t) => {
-  const { directory, root } = await fixture(t);
+  let config;
+  let client;
+  const { directory, root } = await fixture(t, async () => {
+    await client?.close();
+    if (config)
+      await fetch(`http://127.0.0.1:${config.port}/shutdown`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${config.token}` },
+        signal: AbortSignal.timeout(3000),
+      }).catch(() => {});
+  });
   const cache = path.join(directory, 'package runner cache');
   await prepareInstallation(repositoryRoot, cache, null);
   await rename(path.join(cache, 'package-lock.json'), path.join(cache, 'npm-shrinkwrap.json'));
@@ -317,17 +330,6 @@ test('a full global install runs its shared daemon outside the package cache', a
   await once(reservation, 'listening');
   const port = reservation.address().port;
   await new Promise((resolve) => reservation.close(resolve));
-  let config;
-  let client;
-  t.after(async () => {
-    await client?.close();
-    if (config)
-      await fetch(`http://127.0.0.1:${port}/shutdown`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${config.token}` },
-        signal: AbortSignal.timeout(3000),
-      }).catch(() => {});
-  });
   const run = (command, args, cwd, options) => {
     if (command === 'opencode') {
       if (args.includes('add')) {
