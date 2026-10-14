@@ -27,11 +27,45 @@ test('installer validates arguments and always requires an explicit target proje
   for (const args of [
     [],
     ['--project'],
-    ['--global'],
+    ['--global', '--project', '.'],
     ['--port', '0'],
     ['--project', '.', '--port', 'oops'],
   ])
     assert.throws(() => parseInstallOptions(args));
+});
+
+test('global registration uses the shared adapter and does not write a project-local skill', async (t) => {
+  const f = await fixture(t);
+  const calls = [];
+  const starts = [];
+  const result = await install({
+    ...f,
+    global: true,
+    npmCLI: '/npm-cli.js',
+    checkPort: async () => true,
+    startShared: async (config, options) => starts.push({ config, options }),
+    run: (...args) => {
+      calls.push(args);
+      return { stdout: '✓ chrome connected\n' };
+    },
+  });
+  assert.equal(result.global, true);
+  assert.equal(result.skillPath, undefined);
+  assert.equal(starts.length, 1);
+  assert.equal(
+    starts[0].options.daemonURL.href,
+    pathToFileURL(path.join(f.root, 'bridge/shared-daemon.js')).href,
+  );
+  assert.deepEqual(calls.find(([, args]) => args.includes('add'))[1], [
+    'mcp',
+    'add',
+    'chrome',
+    '--global',
+    '--',
+    process.execPath,
+    path.join(f.root, 'bridge/shared-main.js'),
+  ]);
+  await assert.rejects(readFile(path.join(f.project, f.skill)), { code: 'ENOENT' });
 });
 
 test('installer registers with shell-free argument boundaries, copies a skill, and preserves pairing on repeat runs', async (t) => {

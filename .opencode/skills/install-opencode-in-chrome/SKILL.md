@@ -12,18 +12,18 @@ Register `chrome` MCP in the user's chosen project, help the user complete Chrom
 
 ## Workflow
 
-1. Determine the **target project directory** and a permanent **extension checkout directory**. These are different roles. Inspect existing `chrome` registration first; its `command` may identify an installed checkout. Preserve unrelated configuration and user files.
+1. Determine whether the user wants **project-local** or **global shared** access, and choose a permanent **extension checkout directory**. Global mode serves every OpenCode project with one daemon. Inspect existing `chrome` registration first; its `command` may identify an installed checkout. Preserve unrelated configuration and user files.
 2. Check `node --version` (24+) and `opencode --version` (V2). If missing, guide installation from `https://nodejs.org/` and `https://opencode.ai/v2/docs/`. Do not guess V1 configuration shapes.
 3. If no checkout exists, clone `https://github.com/asaf-labs/opencode-in-chrome.git` into the chosen permanent directory. Read its README and SECURITY.md. If it already exists, inspect local changes before updating it.
 4. From that checkout, run:
 
    ```sh
-   npm run install:opencode -- --project "/absolute/path/to/target-project"
+    npm run install:opencode -- --project "/absolute/path/to/target-project"
    ```
 
-   On Windows, use `npm.cmd` if PowerShell blocks `npm`. The installer installs missing dependencies, generates/preserves private pairing settings, registers MCP through OpenCode's CLI, and copies this skill into the target project. Its output does **not** include the token. It does not add approval rules silently.
+   For all projects, use `npm run install:opencode -- --global` instead. Do not combine `--global` and `--project`. On Windows, use `npm.cmd` if PowerShell blocks `npm`. The installer installs missing dependencies, generates/preserves private pairing settings, and registers MCP through OpenCode's CLI. Project-local mode copies this skill into the target project. Its output does **not** include the token or silently add approval rules.
 
-5. If another bridge occupies the port, identify the owner. Have the user disconnect `chrome` in the old project's `/mcps`, then reconnect it in the target project. Do not kill an unidentified process. One extension connects to one bridge; global registration is not a shared daemon. Use `--port 8791` only when a different port is appropriate and update the popup URL.
+5. If another bridge occupies the port, identify the owner and ask before disconnecting it. One extension connects to one bridge. Global mode uses `bridge/shared-main.js`; registering standalone `bridge/main.js` globally does not make it shared. Project-local entries override global configuration: ask before removing an obsolete local entry. Use `--port 8791` only when appropriate and update the popup URL. Stopping a shared daemon affects all its projects; never do so without authorization.
 6. Run `npm run pair` from the checkout. This opens a **local, private pairing page**. Do not read its HTML, `.local/config.json`, or the clipboard into agent context. Do not screenshot that page. The user copies the token directly into the extension popup.
 7. Guide the user through the Chrome-only steps: dedicated profile → `chrome://extensions` → Developer mode → Load unpacked → checkout's `extension/` → popup → URL/token → Save & enable browser → website permission. Do not claim these steps completed without confirmation.
 8. Run `opencode mcp list` from the target project and `npm run doctor` from the checkout. Doctor prints only safe summaries. `--json` provides a machine-readable report; exit 0 means fully ready, exit 1 means attention needed. MCP connected is not proof Chrome is paired/enabled.

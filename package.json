@@ -1,6 +1,6 @@
 {
   "name": "@asaf-labs/opencode-in-chrome",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "bin": {
     "opencode-in-chrome": "scripts/cli.js"
   },
@@ -21,6 +21,7 @@
     "scripts/pairing.js",
     "scripts/doctor.js",
     "scripts/diagnostics.js",
+    "scripts/stop-shared.js",
     ".opencode/skills/install-opencode-in-chrome/SKILL.md",
     "examples/permissions.jsonc",
     "SECURITY.md",
@@ -45,6 +46,7 @@
     "pair": "node scripts/pair.js",
     "package": "node scripts/package.js",
     "start": "node bridge/main.js",
+    "stop:shared": "node scripts/stop-shared.js",
     "test": "node --test test/*.test.js",
     "lint": "eslint .",
     "format": "prettier --write .",

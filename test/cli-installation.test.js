@@ -4,6 +4,11 @@ import { mkdtemp, mkdir, readFile, writeFile, rm, stat, realpath, rename } from 
 import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
+import { once } from 'node:events';
+import { createServer } from 'node:net';
+import { pathToFileURL } from 'node:url';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import path from 'node:path';
 import {
   findNpmCLI,
@@ -13,10 +18,15 @@ import {
   prepareInstallation,
 } from '../scripts/cli-installation.js';
 import { install, repositoryRoot, runCommand } from '../scripts/installation.js';
+import { readConfig } from '../bridge/config.js';
+import { sharedStatus } from '../bridge/shared-process.js';
 
-async function fixture(t) {
+async function fixture(t, cleanup) {
   const directory = await realpath(await mkdtemp(path.join(tmpdir(), 'chrome-cli-')));
-  t.after(() => rm(directory, { recursive: true, force: true }));
+  t.after(async () => {
+    await cleanup?.();
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  });
   const project = path.join(directory, 'project with spaces');
   const root = path.join(directory, 'permanent installation');
   await mkdir(project);
@@ -35,9 +45,13 @@ test('CLI defaults to the current project and accepts explicit project, port, an
   assert.equal(parseCLIOptions([]).help, true);
   assert.equal(parseCLIOptions(['--help']).help, true);
   assert.equal(parseCLIOptions(['install', '--help']).help, true);
+  assert.deepEqual(parseCLIOptions(['install', '--global', '--no-open']), {
+    global: true,
+    noOpen: true,
+  });
   for (const args of [
     ['publish'],
-    ['install', '--global'],
+    ['install', '--global', '--project', cwd],
     ['install', '--port', '0'],
     ['install', '--project'],
   ])
@@ -53,6 +67,10 @@ test('permanent directories follow OS conventions and separate projects', () => 
   assert.match(
     mac,
     /^\/Users\/Test\/Library\/Application Support\/opencode-in-chrome\/projects\/[a-f0-9]{16}$/,
+  );
+  assert.equal(
+    installationDirectory(null, { platform: 'darwin', home: '/Users/Test', env: {} }),
+    '/Users/Test/Library/Application Support/opencode-in-chrome/global',
   );
   const windows = installationDirectory('C:\\Project', {
     platform: 'win32',
@@ -88,6 +106,36 @@ test('permanent directories follow OS conventions and separate projects', () => 
       env: { XDG_DATA_HOME: 'relative' },
     }),
     /^\/home\/test\/\.local\/share\//,
+  );
+});
+
+test('global package installation uses one user-wide identity and forwards global registration', async (t) => {
+  const { root } = await fixture(t);
+  const identities = [];
+  const registrations = [];
+  const result = await installFromPackage(
+    { global: true, noOpen: true },
+    {
+      directory: (identity) => {
+        identities.push(identity);
+        return root;
+      },
+      locateNpm: async () => '/npm-cli.js',
+      run: (_command, args) => ({
+        stdout: args.includes('--version') ? 'opencode v2.0.24' : '✓ chrome connected',
+      }),
+      installProject: async (options) => {
+        registrations.push(options);
+        return { global: options.global, root: options.root, project: options.project };
+      },
+    },
+  );
+  assert.equal(result.global, true);
+  assert.deepEqual(identities, [null]);
+  assert.equal(registrations[0].global, true);
+  assert.equal(
+    JSON.parse(await readFile(path.join(root, '.installer.json'), 'utf8')).project,
+    null,
   );
 });
 
@@ -260,4 +308,60 @@ test('a full permanent install remains runnable after the package-runner cache i
   assert.equal(help.status, 0, help.stderr);
   assert.match(help.stdout, /opencode-in-chrome install/);
   assert.ok((await stat(path.join(root, '.local/pairing.html'))).isFile());
+});
+
+test('a full global install runs its shared daemon outside the package cache', async (t) => {
+  let config;
+  let client;
+  const { directory, root } = await fixture(t, async () => {
+    await client?.close();
+    if (config)
+      await fetch(`http://127.0.0.1:${config.port}/shutdown`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${config.token}` },
+        signal: AbortSignal.timeout(3000),
+      }).catch(() => {});
+  });
+  const cache = path.join(directory, 'package runner cache');
+  await prepareInstallation(repositoryRoot, cache, null);
+  await rename(path.join(cache, 'package-lock.json'), path.join(cache, 'npm-shrinkwrap.json'));
+  const reservation = createServer();
+  reservation.listen(0, '127.0.0.1');
+  await once(reservation, 'listening');
+  const port = reservation.address().port;
+  await new Promise((resolve) => reservation.close(resolve));
+  const run = (command, args, cwd, options) => {
+    if (command === 'opencode') {
+      if (args.includes('add')) {
+        assert.ok(args.includes('--global'));
+        assert.equal(args.at(-1), path.join(root, 'bridge/shared-main.js'));
+      }
+      return { stdout: args.includes('--version') ? 'opencode v2.0.24' : '✓ chrome connected\n' };
+    }
+    return runCommand(
+      command,
+      args.includes('ci') ? [...args, '--offline', '--no-audit', '--no-fund'] : args,
+      cwd,
+      options,
+    );
+  };
+  const result = await installFromPackage(
+    { global: true, noOpen: true, port },
+    { source: cache, directory: () => root, run },
+  );
+  assert.equal(result.global, true);
+  config = await readConfig(pathToFileURL(path.join(root, '.local/config.json')));
+  const started = await sharedStatus(config);
+  await rm(cache, { recursive: true, force: true });
+  client = new Client({ name: 'another-project', version: 'test' });
+  await client.connect(
+    new StdioClientTransport({
+      command: process.execPath,
+      args: [path.join(root, 'bridge/shared-main.js')],
+      stderr: 'pipe',
+    }),
+  );
+  assert.equal((await client.listTools()).tools.length, 12);
+  assert.equal((await sharedStatus(config)).bridgeID, started.bridgeID);
+  await client.close();
 });

@@ -5,7 +5,7 @@
 A Manifest V3 Chrome extension and local MCP bridge. Once paired and enabled, an OpenCode conversation can create and control its own tabs automatically. The extension has a small setup popup; the conversation stays in OpenCode.
 
 ```text
-OpenCode session → MCP stdio → localhost bridge → extension → session-owned Chrome tabs
+OpenCode sessions → MCP stdio adapters → shared localhost bridge → extension → session-owned Chrome tabs
 ```
 
 New tabs use your normal Chrome profile and its existing logins. Cookies stay in Chrome.
@@ -68,9 +68,32 @@ bunx @asaf-labs/opencode-in-chrome install
 
 Both require **Node.js 24+, npm, Chrome 120+, and OpenCode V2**. Bun launches the Node CLI; it does not replace the bridge runtime. Do not pass `--bun`. The installer checks prerequisites, installs locked runtime dependencies without lifecycle scripts, registers `chrome` for the current directory, and opens private pairing instructions. It does not install Node or change your default runtime.
 
-Options: `--project "/absolute/path/to/project"`, `--port 8791`, and `--no-open`. On Windows, use `npx.cmd` if PowerShell blocks `npx`.
+### Every session in every project
 
-The bridge and extension are copied to a permanent **per-project** installation, never registered from the npm/Bun cache:
+Install **global mode** once to make Chrome tools available to all OpenCode projects:
+
+```sh
+npx @asaf-labs/opencode-in-chrome install --global
+# Or:
+bunx @asaf-labs/opencode-in-chrome install --global
+```
+
+Registry commands still require npm publication. From a source checkout, global mode is available with:
+
+```sh
+npm run install:opencode -- --global
+npm run pair
+```
+
+Global mode registers a lightweight MCP adapter in OpenCode's global configuration. Adapters from different projects automatically start or reuse **one authenticated localhost daemon**. The extension pairs once with that daemon; switching projects does not require disconnecting Chrome. Each conversation still controls only its own tabs. Global registration does not share conversation text or make personal tabs accessible.
+
+For package-runner installs, the permanent directory is `opencode-in-chrome/global` under the same OS-specific user-data base listed below. The daemon starts on demand, survives individual adapter/session shutdown, and restarts before the next tool call or adapter connection if it stops. No launch agent or system service is installed. To stop it deliberately, run `npm run stop:shared` from its installation directory; this disconnects browser access for every project using it. Disconnect the adapters as well if you do not want the next call to start it again. A newly restarted bridge must wait for Chrome to reconnect; an early call may report Chrome disconnected. In-flight actions are cancelled, never replayed.
+
+**Migrating an existing project-local setup:** disconnect its old `chrome` MCP before reusing its port. After global registration, remove only the obsolete project-local `mcp.servers.chrome` entry, because local configuration overrides the global entry. Reconnect `chrome` and pair the extension with the global installation's URL/token using its private pairing page. The installer never kills an existing bridge, deletes local registrations, or changes Chrome pairing automatically. Use `--port 8791` if another application must keep the default port; one extension still connects to only one bridge at a time.
+
+Options: `--global` or `--project "/absolute/path/to/project"`, `--port 8791`, and `--no-open`. `--global` and `--project` are mutually exclusive. On Windows, use `npx.cmd` if PowerShell blocks `npx`.
+
+Without `--global`, the bridge and extension are copied to a permanent **per-project** installation, never registered from the npm/Bun cache:
 
 - macOS: `~/Library/Application Support/opencode-in-chrome/projects/<project-id>`
 - Windows: `%LOCALAPPDATA%\opencode-in-chrome\projects\<project-id>`
@@ -223,13 +246,13 @@ opencode mcp add chrome -- /usr/local/bin/node /home/me/opencode-in-chrome/bridg
 
 Use the command printed by setup instead of copying these illustrative paths. Verify your installation with `node --version`, `opencode --version`, and `opencode mcp list`.
 
-The registration is project-local: all conversations in that configured project can use the browser tools. One bridge process per port is supported. Concurrent bridge instances in different project locations need separate ports/configurations; global registration is not a shared-daemon setup.
+This manual registration is project-local: all conversations in that configured project can use the browser tools. Concurrent standalone bridges need separate ports/configurations. For automatic access across all projects, use `install --global`, which registers `bridge/shared-main.js` and shares one daemon instead of starting a standalone listener for each project. Adding `--global` to a registration of `bridge/main.js` alone does not enable shared mode.
 
 ### Use Chrome in a new session or project
 
 **New conversation in the same project:** open `/mcps`, confirm `chrome` is connected, and check that the extension popup says **Ready — sessions can open tabs**. Then ask: “Use the Chrome MCP to open a new tab, visit example.com, and summarize the page.” Each conversation creates its own tabs automatically; pairing is not repeated per session.
 
-**Another project:** setup and registration run in different directories:
+**Another project:** global mode works automatically. With project-local mode, setup and registration run in different directories:
 
 ```powershell
 # 1. Extension repository: generate/preserve pairing settings.
@@ -244,9 +267,9 @@ opencode mcp list
 
 If `npm run setup` reports **Missing script: "setup"**, you are likely in the target application instead of the extension repository. The application does not need its own setup script.
 
-When switching projects using the same port, first disconnect `chrome` in the **old project's** `/mcps` interface, then connect it in the **new project's** `/mcps` interface. Closing a conversation or terminal is not a reliable way to stop its bridge: the OpenCode background service can keep the process running. Disconnecting the old project's bridge also removes browser access for its other conversations.
+With **project-local mode**, when switching projects using the same port, first disconnect `chrome` in the **old project's** `/mcps` interface, then connect it in the **new project's** `/mcps` interface. Closing a conversation or terminal is not a reliable way to stop its bridge: the OpenCode background service can keep the process running. Disconnecting the old project's bridge also removes browser access for its other conversations. Global shared mode does not require this switch.
 
-**Current concurrency boundary:** multiple sessions within one configured project share one bridge and work with separate owned tabs. Different projects can start independent bridge processes, which cannot listen on the same port. A single installed extension connects to only one bridge at a time; separate ports alone do not make one extension serve multiple projects simultaneously. Independent simultaneous setups require separate checkouts/configurations, ports, and paired extension instances in separate Chrome profiles. Global MCP registration makes the server available across projects but does not turn it into a shared daemon.
+**Concurrency boundary:** global shared mode supports simultaneous sessions from different projects through one daemon and one paired extension. Tab ownership remains per conversation. Project-local standalone bridges still need separate ports and paired extension instances in separate Chrome profiles for independent simultaneous setups. A single extension instance connects to only one bridge at a time.
 
 There are two readiness checks:
 
@@ -282,6 +305,8 @@ npm run setup -- --rotate-token
 ```
 
 Setup validates options and preserves other settings. After changing the port or token, reconnect the MCP server in OpenCode and update the extension popup. A running bridge keeps its old settings until restarted. Each concurrent bridge requires its own checkout/configuration and port.
+
+In global mode, stop the shared daemon **before** changing its settings with `npm run stop:shared`, then disconnect/reconnect the adapters and update the popup. Stopping affects all projects; confirm with anyone relying on that Chrome profile. Reconnecting an adapter automatically starts the daemon with the updated settings.
 
 ## Upgrade from the original side-panel version
 

@@ -4,16 +4,20 @@ try {
   const options = parseInstallOptions(process.argv.slice(2));
   if (options.help) {
     console.log(
-      'Usage: npm run install:opencode -- --project <existing-project-directory> [--port 8790]',
+      'Usage: npm run install:opencode -- [--global | --project <existing-project-directory>] [--port 8790]',
     );
     console.log(
       'Installs missing dependencies, preserves pairing settings, registers project-local MCP, and copies the installation skill. Does not print the token.',
     );
   } else {
     const result = await install(options);
-    console.log(`\nChrome MCP registered for: ${result.project}`);
+    console.log(
+      result.global
+        ? '\nChrome MCP registered globally for all OpenCode projects.'
+        : `\nChrome MCP registered for: ${result.project}`,
+    );
     console.log(`Bridge URL: http://127.0.0.1:${result.port}`);
-    console.log(`Installation skill: ${result.skillPath}`);
+    if (result.skillPath) console.log(`Installation skill: ${result.skillPath}`);
     console.log(
       `\nNext: run npm run pair from ${result.root} for private, local pairing instructions.`,
     );
@@ -22,7 +26,9 @@ try {
     );
     console.log('Then run npm run doctor. MCP connected and Chrome ready are separate checks.');
     console.log(
-      'If switching projects, disconnect chrome in the old project before connecting it in the new project.',
+      result.global
+        ? 'Project-local chrome registrations override global mode; remove only obsolete local entries after disconnecting them.'
+        : 'If switching projects, disconnect chrome in the old project before connecting it in the new project.',
     );
   }
 } catch (error) {

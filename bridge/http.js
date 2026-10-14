@@ -10,7 +10,7 @@ export function sameToken(candidate, token) {
   return a.length === b.length && timingSafeEqual(a, b);
 }
 
-export function createBridgeHttp({ token, port = 8790, hub }) {
+export function createBridgeHttp({ token, port = 8790, hub, handleRequest, status = {} }) {
   const server = createServer(async (req, res) => {
     const host = `127.0.0.1:${server.address()?.port || port}`;
     res.setHeader('Cache-Control', 'no-store');
@@ -36,9 +36,17 @@ export function createBridgeHttp({ token, port = 8790, hub }) {
     try {
       const url = new URL(req.url, `http://${host}`);
       const route = url.pathname;
+      if (handleRequest && route !== '/status') {
+        if (origin) {
+          res.writeHead(403).end();
+          return;
+        }
+        if (await handleRequest(req, res, route)) return;
+      }
       let output;
       if (req.method === 'GET' && route === '/status') {
         output = {
+          ...status,
           connected: !!hub.socket,
           browserEnabled: hub.browserEnabled,
           extensionProtocol: hub.extensionProtocol,
