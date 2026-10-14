@@ -43,7 +43,12 @@ export async function ensureSharedDaemon(
   const child = spawn(
     process.execPath,
     [fileURLToPath(daemonURL), '--config', fileURLToPath(configURL)],
-    { detached: true, stdio: 'ignore', windowsHide: true },
+    {
+      cwd: fileURLToPath(new URL('../', daemonURL)),
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+    },
   );
   await new Promise((resolve, reject) => {
     child.once('spawn', resolve);

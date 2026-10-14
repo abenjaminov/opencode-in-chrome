@@ -212,6 +212,7 @@ test('concurrent adapters start a single persistent daemon and can restart it af
   const port = reservation.address().port;
   await new Promise((resolve) => reservation.close(resolve));
   const config = await ensureConfig({ port }, configURL);
+  const clients = [];
   const stop = async () => {
     await fetch(`http://127.0.0.1:${port}/shutdown`, {
       method: 'POST',
@@ -221,18 +222,19 @@ test('concurrent adapters start a single persistent daemon and can restart it af
     await waitFor(async () => (await sharedStatus(config)) === null);
   };
   t.after(async () => {
+    await Promise.all(clients.map((client) => client.close()));
     await stop();
-    await rm(directory, { recursive: true, force: true });
+    await rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   });
   const statuses = await Promise.all(
     Array.from({ length: 4 }, () => ensureSharedDaemon(config, { configURL })),
   );
   assert.equal(new Set(statuses.map((status) => status.bridgeID)).size, 1);
-  const clients = [];
   for (const name of ['project-a', 'project-b']) {
     const cwd = path.join(directory, name);
     await mkdir(cwd);
     const client = new Client({ name, version: 'test' });
+    clients.push(client);
     await client.connect(
       new StdioClientTransport({
         command: process.execPath,
@@ -245,8 +247,6 @@ test('concurrent adapters start a single persistent daemon and can restart it af
         stderr: 'pipe',
       }),
     );
-    clients.push(client);
-    t.after(() => client.close());
     assert.equal((await client.listTools()).tools.length, 12);
   }
   await clients[0].close();
@@ -258,6 +258,9 @@ test('concurrent adapters start a single persistent daemon and can restart it af
   const restarted = await sharedStatus(config);
   assert.notEqual(restarted.bridgeID, statuses[0].bridgeID);
   await clients[1].close();
+  for (const name of ['project-a', 'project-b'])
+    await rm(path.join(directory, name), { recursive: true, maxRetries: 10, retryDelay: 100 });
+  assert.equal((await sharedStatus(config)).bridgeID, restarted.bridgeID);
 });
 
 test('global startup refuses an existing project-local bridge without disconnecting it', async (t) => {
