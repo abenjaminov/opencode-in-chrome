@@ -3,7 +3,7 @@
 ```text
 OpenCode conversation
   └─ MCP stdio (session ID in ai.opencode/sessionID metadata)
-      └─ Node bridge, bound to 127.0.0.1
+      └─ stdio adapter → shared Node daemon, bound to 127.0.0.1
           └─ authenticated WebSocket /browser, protocol version 2
               └─ Chrome service worker
                   └─ session-owned tabs + isolated-world content scripts
@@ -16,6 +16,10 @@ OpenCode conversation
 | `bridge/config.js`             | Validate/read/write local credentials; validate setup options                         |
 | `bridge/setup.js`              | Generate credentials and print project-local MCP registration                         |
 | `bridge/main.js`               | Start HTTP and stdio MCP transports; manage process shutdown                          |
+| `bridge/shared-main.js`        | Start/reuse the daemon and expose stdio MCP for each project                          |
+| `bridge/shared-process.js`     | Authenticated daemon discovery, race-safe startup, and port-conflict refusal          |
+| `bridge/shared-client.js`      | Forward validated tool calls and cancellation to the shared daemon                    |
+| `bridge/shared-server.js`      | Authenticated shared tool endpoint, fixed schemas, one BrowserHub, and shutdown       |
 | `bridge/http.js`               | Enforce loopback host/origin/token boundaries and validate handshakes                 |
 | `bridge/hub.js`                | Route sessions, track generations and pending calls, forward cancellation             |
 | `bridge/tools.js`              | Fixed MCP schemas, descriptions, and result conversion                                |
@@ -30,9 +34,11 @@ There is no build step, arbitrary page-evaluation tool, or conversation UI in th
 
 `scripts/install.js` uses `installation.js` to validate an explicit target directory, bootstrap missing dependencies through npm, preserve local pairing settings, check conflicting listeners, and call OpenCode's registration CLI without rewriting project configuration. It copies the reusable installation skill into the target project's `.opencode/skills/` directory and refuses to overwrite a differing skill.
 
+With `--global`, it registers `bridge/shared-main.js` globally and does not write a project-local skill. Package-runner installations use one user-wide permanent directory in global mode and per-project directories otherwise. The installed daemon path is always permanent, never the package-runner cache.
+
 `scripts/pair.js` creates a private local pairing page from validated configuration. It opens through the operating system's default browser launcher with no shell interpolation. The user transfers the token into Chrome directly. `scripts/doctor.js` uses `diagnostics.js` for safe human/JSON reports; it does not log response bodies, account URLs, or tokens. `bridge/listen.js` supplies actionable startup errors for occupied ports and denied listeners.
 
-`scripts/package.js` uses `archives.js` to build deterministic standalone-project and extension-only ZIPs plus checksums. A source allowlist excludes private/runtime directories; symlinks are rejected. Tagged releases run both platform checks before publication. Package/manifest/tag versions must agree.
+`scripts/package.js` uses `archives.js` to build deterministic standalone-project and extension-only ZIPs plus checksums. A source allowlist excludes private/runtime directories; symlinks are rejected. Tagged releases run all platform checks before publication. Package/manifest/tag versions must agree.
 
 ## Connection lifecycle
 
@@ -42,7 +48,9 @@ There is no build step, arbitrary page-evaluation tool, or conversation UI in th
 4. Only after `ready` does the worker enable controls. The bridge accepts MCP commands only for protocol version 2 while browser access is enabled.
 5. Disconnect suspends page controls, changes generations, rejects pending bridge calls, and schedules reconnection. Pairing changes also suspend controls before reconnecting.
 
-The bridge supports one browser connection and one stdio MCP client. Multiple conversations share that client and are routed by session metadata. Multiple independent bridge processes require separate ports/configurations.
+The standalone bridge supports one browser connection and one stdio MCP client. In global mode, every project gets a stdio MCP adapter, and all adapters forward authenticated HTTP `/call` requests to one daemon. Concurrent startup attempts rely on exclusive loopback port binding: one daemon wins, and all adapters reuse its authenticated status. A mismatched token, standalone listener, or unrelated process is never terminated or replaced.
+
+The daemon validates session metadata, fixed tool names and input schemas, and a 128 KiB request-body limit. Closing an adapter does not stop the daemon. Cancelling a call aborts its HTTP request; the response-close event aborts the corresponding BrowserHub action and forwards cancellation to Chrome. There is no automatic action retry. An authenticated `/shutdown` endpoint cancels pending work, closes Chrome, and stops the listener. Each new tool call checks daemon availability before dispatch, and the next call or adapter startup launches a fresh daemon if needed. The extension can restore session-owned bindings on reconnect; an early call fails safely until Chrome connects.
 
 ## Commands, cancellation, and refs
 

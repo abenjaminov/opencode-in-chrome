@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.6.0
+
+- Add `install --global` for automatic Chrome tools in every OpenCode project through one shared per-user daemon.
+- Start the daemon on demand and reuse it across concurrent project adapters without port conflicts or per-project pairing.
+- Preserve conversation-owned tabs, authenticated loopback access, fixed tool schemas, and cancellation across the shared transport.
+- Keep the daemon alive when adapters close, provide explicit shared shutdown, and refuse to replace unrelated listeners.
+- Add concurrent multi-project, startup-race, authentication, cancellation, reconnect, and global-installer tests.
+
 ## 0.5.0
 
 - Add a publishable CLI for `npx` and `bunx` that defaults to the current project and keeps runtime files outside package-runner caches.

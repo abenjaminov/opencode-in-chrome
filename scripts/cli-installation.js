@@ -10,7 +10,8 @@ export function parseCLIOptions(args, cwd = process.cwd()) {
   if (args[0] !== 'install') throw new Error('Expected install. Run opencode-in-chrome --help.');
   const noOpen = args.includes('--no-open');
   const installArgs = args.slice(1).filter((arg) => arg !== '--no-open');
-  if (!installArgs.includes('--project')) installArgs.push('--project', cwd);
+  if (!installArgs.includes('--project') && !installArgs.includes('--global'))
+    installArgs.push('--project', cwd);
   return { ...parseInstallOptions(installArgs), noOpen };
 }
 
@@ -27,6 +28,7 @@ export function installationDirectory(
         : env.XDG_DATA_HOME && paths.isAbsolute(env.XDG_DATA_HOME)
           ? env.XDG_DATA_HOME
           : paths.join(home, '.local', 'share');
+  if (project === null) return paths.join(base, 'opencode-in-chrome', 'global');
   const identity = platform === 'win32' ? project.toLowerCase() : project;
   const hash = createHash('sha256').update(identity).digest('hex').slice(0, 16);
   return paths.join(base, 'opencode-in-chrome', 'projects', hash);
@@ -80,7 +82,9 @@ export async function prepareInstallation(source, root, project) {
   });
   if (marker !== null) {
     if (JSON.parse(marker).project !== project)
-      throw new Error('This installation belongs to another project. No files were changed.');
+      throw new Error(
+        'This installation belongs to another project or scope. No files were changed.',
+      );
     for (const [filename, bytes] of payload) {
       const target = path.join(root, filename);
       if ((await lstat(target)).isSymbolicLink() || !(await readFile(target)).equals(bytes))
@@ -126,11 +130,12 @@ export async function installFromPackage(
     throw new Error(
       'Node.js 24+ is required. Install it from https://nodejs.org/; your default Node version is not changed by this installer.',
     );
-  const project = await realpath(options.project);
+  const project = await realpath(options.project || process.cwd());
   const version = run('opencode', ['--version'], project, { capture: true });
   if (!/\b(?:opencode\s+)?v?2\./.test(stripVTControlCharacters(version.stdout || '')))
     throw new Error('OpenCode V2 is required. Install it from https://opencode.ai/v2/docs/.');
-  const root = directory(project);
+  const identity = options.global ? null : project;
+  const root = directory(identity);
   const listing = run('opencode', ['mcp', 'list'], project, { capture: true });
   const ownsInstallation = await lstat(path.join(root, '.installer.json'))
     .then(() => true)
@@ -139,6 +144,7 @@ export async function installFromPackage(
       return false;
     });
   if (
+    !options.global &&
     !ownsInstallation &&
     /^\s*(?:[✓✔●✗×]\s*)?chrome\b/m.test(stripVTControlCharacters(listing.stdout || ''))
   )
@@ -146,7 +152,7 @@ export async function installFromPackage(
       'chrome MCP is already configured. Reuse its existing checkout or remove only that registration before installing a new bridge.',
     );
   const npmCLI = await locateNpm();
-  await prepareInstallation(source, root, project);
+  await prepareInstallation(source, root, identity);
   const result = await installProject({ ...options, project, root, npmCLI, run });
   run(
     process.execPath,

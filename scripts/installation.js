@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { stripVTControlCharacters } from 'node:util';
 import { setTimeout } from 'node:timers/promises';
 import { ensureConfig } from '../bridge/config.js';
+import { ensureSharedDaemon } from '../bridge/shared-process.js';
 import { portAvailable, inspectBridge } from './diagnostics.js';
 
 export const repositoryRoot = fileURLToPath(new URL('../', import.meta.url));
@@ -16,6 +17,7 @@ export function parseInstallOptions(args) {
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
     if (arg === '--help') options.help = true;
+    else if (arg === '--global') options.global = true;
     else if (arg === '--project') {
       const value = args[++index];
       if (!value || value.startsWith('--'))
@@ -28,7 +30,8 @@ export function parseInstallOptions(args) {
       options.port = Number(value);
     } else throw new Error(`Unknown installer option: ${arg}`);
   }
-  if (!options.help && !options.project)
+  if (options.global && options.project) throw new Error('Choose --global or --project, not both.');
+  if (!options.help && !options.global && !options.project)
     throw new Error('Specify --project <target-project-directory>.');
   return options;
 }
@@ -54,7 +57,8 @@ export function runCommand(executable, args, cwd, { capture = false } = {}) {
 }
 
 export async function install({
-  project,
+  project = process.cwd(),
+  global = false,
   port,
   root = repositoryRoot,
   run = runCommand,
@@ -62,16 +66,19 @@ export async function install({
   checkBridge = inspectBridge,
   npmCLI = process.env.npm_execpath,
   wait = setTimeout,
+  startShared = ensureSharedDaemon,
 }) {
   if (Number(process.versions.node.split('.')[0]) < 24) throw new Error('Node.js 24+ is required.');
   if (!(await stat(project)).isDirectory())
     throw new Error('The target project must be an existing directory.');
   const skill = await readFile(path.join(root, skillPath), 'utf8');
-  const destination = path.join(project, skillPath);
-  const existing = await readFile(destination, 'utf8').catch((error) => {
-    if (error.code !== 'ENOENT') throw error;
-    return null;
-  });
+  const destination = global ? undefined : path.join(project, skillPath);
+  const existing = global
+    ? null
+    : await readFile(destination, 'utf8').catch((error) => {
+        if (error.code !== 'ENOENT') throw error;
+        return null;
+      });
   if (existing !== null && existing !== skill)
     throw new Error(
       'An installation skill already exists in the target project with different contents. Preserve or update it manually before installing.',
@@ -101,13 +108,28 @@ export async function install({
       );
     }
   }
+  if (global)
+    await startShared(config, {
+      configURL: pathToFileURL(path.join(root, '.local/config.json')),
+      daemonURL: pathToFileURL(path.join(root, 'bridge/shared-daemon.js')),
+    });
   run(
     'opencode',
-    ['mcp', 'add', 'chrome', '--', process.execPath, path.join(root, 'bridge/main.js')],
+    [
+      'mcp',
+      'add',
+      'chrome',
+      ...(global ? ['--global'] : []),
+      '--',
+      process.execPath,
+      path.join(root, global ? 'bridge/shared-main.js' : 'bridge/main.js'),
+    ],
     project,
   );
-  await mkdir(path.dirname(destination), { recursive: true });
-  if (existing === null) await writeFile(destination, skill, { flag: 'wx' });
+  if (destination) {
+    await mkdir(path.dirname(destination), { recursive: true });
+    if (existing === null) await writeFile(destination, skill, { flag: 'wx' });
+  }
   let connected = false;
   for (let attempt = 0; attempt < 6; attempt++) {
     if (attempt > 0) await wait(500);
@@ -120,8 +142,16 @@ export async function install({
   }
   if (!connected) {
     throw new Error(
-      "Chrome MCP was registered but is not confirmed connected in the target project. Disconnect chrome in the previous project if it holds the port, then reconnect it in this project's /mcps and run opencode mcp list. The installation skill was copied successfully.",
+      global
+        ? 'Global Chrome MCP was registered but is not confirmed connected here. Project-local chrome entries override global configuration; remove only an old local entry and reconnect chrome in /mcps. Check npm run doctor for port conflicts.'
+        : "Chrome MCP was registered but is not confirmed connected in the target project. Disconnect chrome in the previous project if it holds the port, then reconnect it in this project's /mcps and run opencode mcp list. The installation skill was copied successfully.",
     );
   }
-  return { project, root, port: config.port, skillPath: destination };
+  return {
+    project,
+    root,
+    port: config.port,
+    skillPath: destination,
+    ...(global ? { global: true } : {}),
+  };
 }

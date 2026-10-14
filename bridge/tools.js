@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export function registerBrowserTools(server, hub) {
+function defineBrowserTools() {
   const ref = z
     .string()
     .regex(/^e\d+$/)
@@ -16,7 +16,7 @@ export function registerBrowserTools(server, hub) {
     .string()
     .url()
     .refine((value) => /^https?:/.test(value));
-  const definitions = [
+  return [
     [
       'open_tab',
       'Create a new Chrome tab owned by this OpenCode session. No manual tab connection is needed. Uses your Chrome profile’s existing logins. Returns tabID.',
@@ -58,7 +58,12 @@ export function registerBrowserTools(server, hub) {
     ['navigate', 'Navigate a session-owned tab to an HTTP or HTTPS URL.', { tabID, url }],
     ['screenshot', 'Capture a session-owned tab’s viewport. This activates the tab.', { tabID }],
   ];
-  for (const [name, description, inputSchema] of definitions) {
+}
+
+export const browserToolDefinitions = defineBrowserTools();
+
+export function registerBrowserTools(server, hub) {
+  for (const [name, description, inputSchema] of browserToolDefinitions) {
     server.registerTool(name, { description, inputSchema }, async (args, extra) => {
       try {
         const result = await hub.call(

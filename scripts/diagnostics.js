@@ -41,7 +41,13 @@ export async function inspectBridge(
       check('bridge', 'fail', 'The status response is not a recognized Chrome bridge response.');
       return checks;
     }
-    check('bridge', 'pass', `Authenticated bridge reachable at ${base}.`);
+    check(
+      'bridge',
+      'pass',
+      status.mode === 'shared'
+        ? `Authenticated shared bridge reachable at ${base}; serves all configured projects.`
+        : `Authenticated bridge reachable at ${base}.`,
+    );
     check(
       'browser',
       status.connected && status.extensionProtocol === 2 ? 'pass' : 'warn',
