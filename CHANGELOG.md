@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.0
+
+- Add a publishable CLI for `npx` and `bunx` that defaults to the current project and keeps runtime files outside package-runner caches.
+- Preserve existing installations and pairing settings, isolate permanent installations per project, and refuse to replace an existing Chrome MCP on first install.
+- Ship a publishable dependency lockfile and install only runtime dependencies without lifecycle scripts.
+- Automatically select macOS, Windows, or Linux pairing instructions with accessible tabs and an extension-folder copy button.
+- Explain macOS folder selection with Command + Shift + G and retry MCP readiness while the server starts.
+- Add CLI and package-distribution tests and macOS CI coverage.
+
 ## 0.4.0
 
 - Add MIT licensing, code ownership rules, and owner instructions for protected branches and confidential vulnerability reporting.

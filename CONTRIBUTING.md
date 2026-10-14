@@ -11,6 +11,8 @@ There is no build step. The unpacked Chrome extension lives in `extension/`; the
 
 Use `npm run format` to apply Prettier and `npm run lint` for ESLint. `npm run check` also validates package/lockfile/Chrome version consistency and runs all tests. Keep JavaScript ES modules and two-space indentation. Runtime MCP version is read from `package.json`.
 
+The published CLI entrypoint is `scripts/cli.js`. Test it from a checkout with `node /absolute/path/to/scripts/cli.js --help`. `npm pack` generates an ignored `npm-shrinkwrap.json` from the committed lockfile so package-runner installs retain locked dependencies. Tests verify the actual npm tarball and executable without publishing anything. Node.js remains the runtime even when launching through `bunx`.
+
 See [architecture](docs/architecture.md) for module boundaries and connection lifecycle. To bump a release, run `npm version <version> --no-git-tag-version`, update `extension/manifest.json` to match, and add a changelog entry.
 
 ## Releases
@@ -22,6 +24,10 @@ See [architecture](docs/architecture.md) for module boundaries and connection li
 5. The release workflow reruns checks on Windows/Linux and publishes both ZIPs, SHA-256 checksums, and changelog notes. Do not move a published tag; release a new version for fixes.
 
 Owner-only GitHub settings are documented in [maintainer setup](docs/maintainer-setup.md). Real Chrome smoke testing remains a manual step; automatic browser testing is a future enhancement.
+
+### npm publication
+
+Publication is a separate maintainer action, not part of pushing a commit or the GitHub release workflow. Confirm ownership of the `@asaf-labs` npm scope, sign in locally, run `npm run check` and `npm pack --dry-run`, then explicitly publish with `npm publish --access public`. `prepublishOnly` reruns checks. Never put npm credentials in repository files or agent conversations.
 
 When changing the extension, reload it at `chrome://extensions`. When changing bridge code, reconnect the `chrome` server in OpenCode's `/mcps` interface. After changing permissions, Chrome may require enabling the extension again.
 

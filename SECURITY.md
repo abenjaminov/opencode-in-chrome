@@ -34,6 +34,7 @@ The extension cannot reliably determine whether an arbitrary click is destructiv
 - **Private local state:** `.local/` is ignored by Git. The bridge token and machine-specific MCP configuration must never be committed.
 - **Credential-safe onboarding:** `install:opencode` and `doctor` do not print tokens. `pair` writes an ignored, restricted local HTML page with copy/reveal controls and no remote resources. That page contains a credential; keep it out of agent reads, screenshots, and shared files. The lower-level `setup` command intentionally prints the token for manual setup.
 - **Release boundaries:** standalone and extension-only archives use an explicit source allowlist and exclude `.local/`, `node_modules/`, and Git state. Releases include checksums; verify downloads from the maintainer's repository.
+- **Package-runner installation:** npm packages use an explicit file allowlist and a publishable lockfile. The CLI copies code into a permanent per-project directory, installs locked runtime dependencies with lifecycle scripts disabled, and refuses to overwrite different existing code. Package-runner caches are never the registered bridge location. npm/Bun may separately apply their own dependency-install behavior when fetching the CLI.
 
 ## Trust boundaries and limitations
 
