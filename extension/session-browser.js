@@ -2,6 +2,7 @@ export class SessionBrowser {
   bindings = {};
   documents = new Map();
   enabled = false;
+  clickingTabs = new Set();
 
   constructor(chrome, publish = () => {}) {
     this.chrome = chrome;
@@ -314,6 +315,88 @@ export class SessionBrowser {
     const result = results[0]?.result;
     if (!result) throw new Error('Page returned no result.');
     if (command.tool === 'read_page') this.documents.set(tabID, result.documentID);
+    if (command.tool === 'click') return this.#click(command, tabID, result.clickTarget);
     return { tabID, ...result };
+  }
+
+  #assertClick(command, tabID, target) {
+    this.assert(command);
+    if (this.owner(tabID)?.[0] !== command.sessionID)
+      throw new Error('This session no longer owns the click target.');
+    if (this.documents.get(tabID) !== target.documentID)
+      throw new Error('Page changed before the click. Call read_page again.');
+  }
+
+  async #validateClick(command, tabID, target) {
+    this.#assertClick(command, tabID, target);
+    const results = await this.chrome.scripting.executeScript({
+      target: { tabId: tabID },
+      func: (input) => globalThis.__opencodeChrome?.validateClick(input),
+      args: [{ ...command.args, ...target, commandID: command.id }],
+    });
+    this.#assertClick(command, tabID, target);
+    if (results[0]?.result?.valid !== true)
+      throw new Error('Click target could not be validated. Call read_page again.');
+  }
+
+  async #click(command, tabID, target) {
+    if (!target || !Number.isFinite(target.x) || !Number.isFinite(target.y))
+      throw new Error('No browser click target. Reload the extension and call read_page again.');
+    if (!this.chrome.debugger)
+      throw new Error(
+        'Browser-level clicks require the debugger permission. Reload the extension.',
+      );
+    if (this.clickingTabs.has(tabID)) throw new Error('Another click is in progress on this tab.');
+    this.clickingTabs.add(tabID);
+    const debuggee = { tabId: tabID };
+    let attached = false;
+    let pressAttempted = false;
+    try {
+      await this.#validateClick(command, tabID, target);
+      try {
+        await this.chrome.debugger.attach(debuggee, '1.3');
+      } catch {
+        throw new Error(
+          'Could not attach browser input. Close DevTools on this tab and check the extension debugger permission. No click was dispatched.',
+        );
+      }
+      attached = true;
+      this.#assertClick(command, tabID, target);
+      const point = { x: target.x, y: target.y };
+      await this.chrome.debugger.sendCommand(debuggee, 'Input.dispatchMouseEvent', {
+        type: 'mouseMoved',
+        ...point,
+        buttons: 0,
+      });
+      await this.#validateClick(command, tabID, target);
+      pressAttempted = true;
+      await this.chrome.debugger.sendCommand(debuggee, 'Input.dispatchMouseEvent', {
+        type: 'mousePressed',
+        ...point,
+        button: 'left',
+        buttons: 1,
+        clickCount: 1,
+      });
+      this.assert(command);
+      await this.chrome.debugger.sendCommand(debuggee, 'Input.dispatchMouseEvent', {
+        type: 'mouseReleased',
+        ...point,
+        button: 'left',
+        buttons: 0,
+        clickCount: 1,
+      });
+      this.assert(command);
+      return { tabID, dispatched: true, applicationAccepted: null };
+    } catch (error) {
+      if (pressAttempted)
+        throw new Error(
+          `${error.message} Mouse input may already have affected the page; inspect it before retrying.`,
+          { cause: error },
+        );
+      throw error;
+    } finally {
+      if (attached) await this.chrome.debugger.detach(debuggee).catch(() => {});
+      this.clickingTabs.delete(tabID);
+    }
   }
 }

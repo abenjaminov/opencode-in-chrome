@@ -1,5 +1,5 @@
 (() => {
-  if (globalThis.__opencodeChrome?.version === 4) return;
+  if (globalThis.__opencodeChrome?.version === 5) return;
   globalThis.__opencodeChrome?.dispose?.();
   globalThis.__opencodeChrome?.setEnabled?.(false);
   let refs = new Map(),
@@ -108,6 +108,41 @@
       style.display !== 'none'
     );
   }
+  function clickPoint(element) {
+    for (const rect of element.getClientRects()) {
+      const left = Math.max(0, rect.left),
+        top = Math.max(0, rect.top),
+        right = Math.min(innerWidth, rect.right),
+        bottom = Math.min(innerHeight, rect.bottom);
+      if (right <= left || bottom <= top) continue;
+      const x = (left + right) / 2,
+        y = (top + bottom) / 2,
+        hit = document.elementFromPoint(x, y);
+      if (hit && (hit === element || element.contains(hit))) return { x, y };
+    }
+    throw new Error('Click target is outside the viewport or covered by another element.');
+  }
+  function validateClick(args) {
+    if (args.commandID && cancelledActions.has(args.commandID))
+      throw new Error('Browser action cancelled before execution.');
+    if (!enabled) throw new Error('Browser access is disabled.');
+    const element = refs.get(args.ref);
+    if (
+      args.documentID !== documentID ||
+      args.snapshotRevision !== snapshotRevision ||
+      args.controlRevision !== controlRevision ||
+      snapshotURL !== location.href ||
+      !element?.isConnected ||
+      !visible(element) ||
+      element.matches(':disabled') ||
+      element.closest('[aria-disabled="true"],[inert]')
+    )
+      throw new Error('Click target changed or became disabled. Call read_page again.');
+    const point = clickPoint(element);
+    if (point.x !== args.x || point.y !== args.y)
+      throw new Error('Click target moved. Call read_page again.');
+    return { valid: true };
+  }
   function run(tool, args = {}) {
     if (args.commandID && cancelledActions.has(args.commandID))
       throw new Error('Browser action cancelled before execution.');
@@ -187,8 +222,11 @@
         el.disabled
       )
         throw new Error('Page changed before the action. Call read_page again.');
-      if (tool === 'click') el.click();
-      else if (tool === 'type') {
+      if (tool === 'click') {
+        const target = { ...clickPoint(el), documentID, snapshotRevision, controlRevision };
+        validateClick({ ...args, ...target });
+        return { clickTarget: target };
+      } else if (tool === 'type') {
         if (el.matches('input,textarea')) {
           if (
             el.readOnly ||
@@ -237,8 +275,9 @@
   };
   globalThis.chrome?.runtime?.onMessage?.addListener(onMessage);
   globalThis.__opencodeChrome = {
-    version: 4,
+    version: 5,
     run,
+    validateClick,
     setEnabled,
     dispose: () => {
       setEnabled(false);

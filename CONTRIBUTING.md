@@ -23,7 +23,7 @@ See [architecture](docs/architecture.md) for module boundaries and connection li
 4. Merge the reviewed changes with passing CI, then push a tag matching the package version, for example `v0.4.0`.
 5. The release workflow reruns checks on Windows/Linux and publishes both ZIPs, SHA-256 checksums, and changelog notes. Do not move a published tag; release a new version for fixes.
 
-Owner-only GitHub settings are documented in [maintainer setup](docs/maintainer-setup.md). Real Chrome smoke testing remains a manual step; automatic browser testing is a future enhancement.
+Owner-only GitHub settings are documented in [maintainer setup](docs/maintainer-setup.md). Run `CHROME_BINARY=/path/to/chrome npm run test:browser` for the local trusted-click regression. On macOS, the usual binary is `/Applications/Google Chrome.app/Contents/MacOS/Google Chrome`; quote paths with spaces. The test starts a temporary headless profile and local page, never your signed-in Chrome profile. Linux CI runs it with `/usr/bin/google-chrome`. Extension loading and permission prompts still need manual smoke testing.
 
 ### npm publication
 

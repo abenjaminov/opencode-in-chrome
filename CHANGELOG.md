@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- Replace synthetic DOM clicks with hit-tested browser-level mouse movement, press, and release using the Chrome debugger API on session-owned tabs.
+- Report clicks as dispatched with application acceptance unknown; revalidate after hover handlers and warn about uncertain outcomes after mouse-down.
+- Add the debugger permission and document extension reload, debugging banners, and DevTools conflicts.
+- Add a real Chrome regression for trusted pointer handlers and dropdown selection, plus stale/covered-target and cancellation tests.
+
 ## 0.6.0
 
 - Add `install --global` for automatic Chrome tools in every OpenCode project through one shared per-user daemon.

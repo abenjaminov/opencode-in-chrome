@@ -17,6 +17,8 @@ export function fakeChrome() {
     messages = [],
     saved = {};
   const groupState = new Map();
+  const debuggerCalls = [];
+  const debuggerTabs = new Set();
   let nextGroupID = 10;
   const get = async (id) => {
     if (!tabState.has(id)) throw new Error('No tab');
@@ -28,6 +30,23 @@ export function fakeChrome() {
     scriptCalls,
     messages,
     saved,
+    debuggerCalls,
+    debuggerTabs,
+    debugger: {
+      attach: async (target, version) => {
+        debuggerCalls.push({ action: 'attach', target, version });
+        if (debuggerTabs.has(target.tabId)) throw new Error('Already attached');
+        debuggerTabs.add(target.tabId);
+      },
+      sendCommand: async (target, method, params) => {
+        if (!debuggerTabs.has(target.tabId)) throw new Error('Not attached');
+        debuggerCalls.push({ action: 'send', target, method, params });
+      },
+      detach: async (target) => {
+        debuggerCalls.push({ action: 'detach', target });
+        debuggerTabs.delete(target.tabId);
+      },
+    },
     tabs: {
       get,
       create: async ({ url }) => {
@@ -84,6 +103,21 @@ export function fakeChrome() {
         scriptCalls.push(request);
         if (request.files) return [];
         const tab = await get(request.target.tabId);
+        if (request.args?.[0] === 'click')
+          return [
+            {
+              result: {
+                clickTarget: {
+                  x: 50,
+                  y: 10,
+                  documentID: `doc-${tab.id}`,
+                  snapshotRevision: 1,
+                  controlRevision: 0,
+                },
+              },
+            },
+          ];
+        if (request.args?.[0]?.snapshotRevision !== undefined) return [{ result: { valid: true } }];
         return [{ result: { title: tab.title, documentID: `doc-${tab.id}`, ok: true } }];
       },
     },
