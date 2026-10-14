@@ -94,7 +94,7 @@ test('configuration rotation and pairing page stay local and escape displayed pa
   const rotated = await ensureConfig({ rotateToken: true }, f.url);
   assert.equal(rotated.port, 9001);
   assert.notEqual(rotated.token, original.token);
-  const html = pairingHTML(rotated, '<script>bad</script>');
+  const html = pairingHTML(rotated, '<script>bad</script>', 'darwin');
   assert.ok(html.includes('&lt;script&gt;bad&lt;/script&gt;'));
   assert.ok(html.includes(rotated.token));
   assert.ok(html.includes("default-src 'none'"));

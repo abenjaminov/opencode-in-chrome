@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import path from 'node:path';
 import { JSDOM } from 'jsdom';
 import { pairingHTML } from '../scripts/pairing.js';
 
@@ -95,12 +96,16 @@ test('clipboard fallback selects the path with the platform-specific copy shortc
 
 test('extension paths containing HTML remain inert and copy exactly', async (t) => {
   const root = '/Users/Test/<img src=x onerror="window.injected=true"> & tools';
-  const { document, navigator } = pairingPage(t, 'darwin', root);
-  assert.equal(document.querySelector('img'), null);
-  const copied = [];
-  Object.defineProperty(navigator, 'clipboard', {
-    value: { writeText: async (value) => copied.push(value) },
-  });
-  await document.getElementById('copy-path').onclick();
-  assert.deepEqual(copied, [`${root}/extension`]);
+  for (const platform of ['darwin', 'win32', 'linux']) {
+    const { document, navigator } = pairingPage(t, platform, root);
+    assert.equal(document.querySelector('img'), null);
+    const copied = [];
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: async (value) => copied.push(value) },
+    });
+    await document.getElementById('copy-path').onclick();
+    assert.deepEqual(copied, [
+      (platform === 'win32' ? path.win32 : path.posix).join(root, 'extension'),
+    ]);
+  }
 });
