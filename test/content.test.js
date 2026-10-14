@@ -16,9 +16,18 @@ function page(t, chrome) {
   );
   const { window } = dom;
   if (chrome) window.chrome = chrome;
+  window.HTMLElement.prototype.getBoundingClientRect = () => ({
+    left: 10,
+    top: 10,
+    right: 110,
+    bottom: 30,
+    width: 100,
+    height: 20,
+  });
   window.HTMLElement.prototype.getClientRects = function () {
-    return [{ width: 100, height: 20 }];
+    return [this.getBoundingClientRect()];
   };
+  window.document.elementFromPoint = () => window.document.getElementById('button');
   window.HTMLElement.prototype.scrollIntoView = () => {};
   window.eval(script);
   t.after(() => window.close());
@@ -47,8 +56,10 @@ test('form interaction updates values and dispatches page events', async (t) => 
   await run('type', { ...args(name.ref), text: 'Alice' });
   assert.equal(document.getElementById('name').value, 'Alice');
   assert.equal(inputEvents, 1);
-  await run('click', args(snapshot.elements.find((e) => e.tag === 'button').ref));
-  assert.equal(clicks, 1);
+  const prepared = await run('click', args(snapshot.elements.find((e) => e.tag === 'button').ref));
+  assert.equal(clicks, 0);
+  assert.equal(prepared.clickTarget.documentID, snapshot.documentID);
+  assert.equal(prepared.ok, undefined);
   await run('select', {
     ...args(snapshot.elements.find((e) => e.tag === 'select').ref),
     value: 'b',
@@ -104,7 +115,14 @@ test('same-document navigation invalidates action refs', (t) => {
 test('agent cursor highlights a target without following the user mouse or polluting refs', async (t) => {
   const { run, document, window } = page(t);
   const button = document.getElementById('button');
-  button.getBoundingClientRect = () => ({ left: 100, top: 200, width: 80, height: 40 });
+  button.getBoundingClientRect = () => ({
+    left: 100,
+    top: 200,
+    right: 180,
+    bottom: 240,
+    width: 80,
+    height: 40,
+  });
   const snapshot = run('read_page');
   assert.equal(snapshot.elements.length, 6);
   let clicks = 0;
@@ -117,8 +135,18 @@ test('agent cursor highlights a target without following the user mouse or pollu
   assert.equal(clicks, 0);
   window.dispatchEvent(new window.MouseEvent('mousemove', { clientX: 600, clientY: 500 }));
   assert.equal(cursor.style.transform, 'translate3d(140px,220px,0)');
-  await promise;
-  assert.equal(clicks, 1);
+  const prepared = await promise;
+  assert.deepEqual(
+    { ...prepared.clickTarget, documentID: 'document' },
+    {
+      x: 140,
+      y: 220,
+      documentID: 'document',
+      snapshotRevision: 1,
+      controlRevision: 0,
+    },
+  );
+  assert.equal(clicks, 0);
   assert.match(host.shadowRoot.querySelector('.status').textContent, /Clicking/);
 });
 
@@ -186,4 +214,60 @@ test('disable then quick re-enable cannot revive a pending interaction', async (
   window.__opencodeChrome.setEnabled(true);
   await rejected;
   assert.equal(clicks, 0);
+});
+
+test('click preparation hit-tests descendants and never emits a synthetic click', async (t) => {
+  const { run, document, window } = page(t);
+  const button = document.getElementById('button');
+  const child = document.createElement('span');
+  button.append(child);
+  document.elementFromPoint = () => child;
+  const snapshot = run('read_page');
+  const args = { ref: snapshot.elements[0].ref, documentID: snapshot.documentID };
+  const { clickTarget } = await run('click', args);
+  assert.deepEqual(
+    { ...window.__opencodeChrome.validateClick({ ...args, ...clickTarget }) },
+    { valid: true },
+  );
+  document.elementFromPoint = () => document.getElementById('name');
+  assert.throws(
+    () => window.__opencodeChrome.validateClick({ ...args, ...clickTarget }),
+    /covered/,
+  );
+  await assert.rejects(run('click', args), /covered/);
+});
+
+test('prepared click targets expire after movement, a new snapshot, or disable and re-enable', async (t) => {
+  const { run, document, window } = page(t);
+  const snapshot = run('read_page');
+  const args = { ref: snapshot.elements[0].ref, documentID: snapshot.documentID };
+  const { clickTarget } = await run('click', args);
+  const validate = () => window.__opencodeChrome.validateClick({ ...args, ...clickTarget });
+  const button = document.getElementById('button');
+  const originalRect = button.getBoundingClientRect;
+  button.getBoundingClientRect = () => ({ left: 50, top: 10, right: 150, bottom: 30 });
+  assert.throws(validate, /moved/);
+  button.getBoundingClientRect = originalRect;
+  window.__opencodeChrome.setEnabled(false);
+  window.__opencodeChrome.setEnabled(true);
+  assert.throws(validate, /changed/);
+  run('read_page');
+  assert.throws(validate, /changed/);
+});
+
+test('click preparation rejects disabled, inert, and off-viewport targets', async (t) => {
+  const { run, document } = page(t);
+  const snapshot = run('read_page');
+  const button = document.getElementById('button');
+  const args = { ref: snapshot.elements[0].ref, documentID: snapshot.documentID };
+  button.setAttribute('aria-disabled', 'true');
+  await assert.rejects(run('click', args), /disabled/);
+  button.removeAttribute('aria-disabled');
+  button.setAttribute('inert', '');
+  await assert.rejects(run('click', args), /disabled/);
+  button.removeAttribute('inert');
+  button.getBoundingClientRect = () => ({ left: -100, right: -10, top: 10, bottom: 30 });
+  await assert.rejects(run('click', args), /outside the viewport/);
+  button.getBoundingClientRect = () => ({ left: -20, right: 80, top: 10, bottom: 30 });
+  assert.equal((await run('click', args)).clickTarget.x, 40);
 });

@@ -58,6 +58,8 @@ The bridge attaches a random request ID, session generation, and 25-second deadl
 
 `read_page` creates a fresh ref map. A monotonically increasing ref counter avoids accidentally reusing old names; snapshot revision checks also stop a pending action when a new snapshot replaces its map. Document IDs and URL checks prevent refs crossing documents or same-document navigation.
 
+For `click`, the content script prepares viewport CSS coordinates from a visible, unobstructed client rectangle without calling `el.click()`. The worker validates the original ref, document, snapshot/control revisions, and hit target, attaches `chrome.debugger` to the owned tab, and dispatches mouse movement. It revalidates after hover handlers before sending press/release, checks cancellation/generation/expiry between operations, and detaches in cleanup. Attachment failures never fall back to DOM clicks. The result is `{ tabID, dispatched: true, applicationAccepted: null }`, not an application-state assertion. Once a press is attempted, errors warn that the page may already have changed; no retry is automatic. DOM validation and browser input remain separate operations, so page changes can still race dispatch.
+
 MCP cancellation and timeouts send `cancel` to the worker. Queued work is marked cancelled; executing page interactions receive an extension message. Disable and disconnect notify all owned tabs. These are best-effort stops, not rollback: an already-issued Chrome call or network request may complete.
 
 ## Persistence and trust
@@ -72,4 +74,4 @@ Session ownership is a tab-targeting boundary, not account isolation. Session ID
 
 ## Verification
 
-`npm run check` runs lint, formatting, metadata checks, and automated tests. Tests cover authenticated transport with a real MCP client/server pair, session ownership with a simulated Chrome API, the worker readiness lifecycle, configuration validation, and DOM/cancellation behavior with jsdom. Real Chrome behavior still needs the manual smoke test in [CONTRIBUTING.md](../CONTRIBUTING.md).
+`npm run check` runs lint, formatting, metadata checks, and automated tests. Tests cover authenticated transport with a real MCP client/server pair, session ownership with a simulated Chrome API, the worker readiness lifecycle, configuration validation, and DOM/cancellation behavior with jsdom. `CHROME_BINARY=/path/to/chrome npm run test:browser` uses an isolated real Chrome profile and local page to verify trusted pointer/mouse events and hit-testing. Its scripting/debugger adapter drives the same SessionBrowser click path through a test CDP connection; actual extension attachment and permission prompts still require the manual smoke test in [CONTRIBUTING.md](../CONTRIBUTING.md).

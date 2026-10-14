@@ -49,6 +49,7 @@ test('no tool can target a personal tab or a different session’s tab', async (
       await assert.rejects(browser.run(command(tool, { tabID })), /does not own/);
   }
   assert.equal(chrome.scriptCalls.length, scriptCount);
+  assert.equal(chrome.debuggerCalls.length, 0);
   assert.ok(chrome.tabState.has(1));
 });
 
@@ -59,7 +60,7 @@ test('document refs stay per-tab and are cleared on navigation', async () => {
   await browser.run(command('read_page', { tabID: a.tabID }));
   await browser.run(command('read_page', { tabID: b.tabID }));
   await browser.run(command('click', { tabID: a.tabID, ref: 'e1' }));
-  assert.equal(chrome.scriptCalls.at(-1).args[1].documentID, `doc-${a.tabID}`);
+  assert.equal(chrome.scriptCalls.at(-1).args[0].documentID, `doc-${a.tabID}`);
   await browser.run(command('navigate', { tabID: a.tabID, url: 'https://example.com/new' }));
   assert.equal(browser.documents.get(a.tabID), undefined);
   assert.equal(browser.documents.get(b.tabID), `doc-${b.tabID}`);
@@ -162,4 +163,163 @@ test('cancelled commands cannot run and cancellation messages target their owned
     tabID: owned.tabID,
     message: { type: 'opencode-cancel', id: 'action-one' },
   });
+});
+
+test('click dispatch uses the owned tab and complete browser mouse input with explicit outcome semantics', async () => {
+  const { browser, chrome, command } = fixture();
+  const tab = await browser.run(command('open_tab', { url: 'https://example.com' }));
+  await browser.run(command('read_page'));
+  const result = await browser.run(command('click', { ref: 'e1' }));
+  assert.deepEqual(result, { tabID: tab.tabID, dispatched: true, applicationAccepted: null });
+  assert.deepEqual(
+    chrome.debuggerCalls.map((call) => call.action),
+    ['attach', 'send', 'send', 'send', 'detach'],
+  );
+  assert.equal(chrome.debuggerCalls[0].version, '1.3');
+  assert.ok(chrome.debuggerCalls.every((call) => call.target.tabId === tab.tabID));
+  assert.deepEqual(
+    chrome.debuggerCalls
+      .filter((call) => call.action === 'send')
+      .map((call) => ({ method: call.method, ...call.params })),
+    [
+      { method: 'Input.dispatchMouseEvent', type: 'mouseMoved', x: 50, y: 10, buttons: 0 },
+      {
+        method: 'Input.dispatchMouseEvent',
+        type: 'mousePressed',
+        x: 50,
+        y: 10,
+        button: 'left',
+        buttons: 1,
+        clickCount: 1,
+      },
+      {
+        method: 'Input.dispatchMouseEvent',
+        type: 'mouseReleased',
+        x: 50,
+        y: 10,
+        button: 'left',
+        buttons: 0,
+        clickCount: 1,
+      },
+    ],
+  );
+  assert.equal(
+    chrome.scriptCalls.filter((call) => call.args?.[0]?.snapshotRevision !== undefined).length,
+    2,
+  );
+  assert.equal(chrome.debuggerTabs.size, 0);
+});
+
+test('debugger attachment failures do not detach another debugger or fall back to synthetic clicks', async () => {
+  const { browser, chrome, command } = fixture();
+  const tab = await browser.run(command('open_tab', { url: 'https://example.com' }));
+  await browser.run(command('read_page'));
+  chrome.debuggerTabs.add(tab.tabID);
+  await assert.rejects(browser.run(command('click', { ref: 'e1' })), /No click was dispatched/);
+  assert.deepEqual(
+    chrome.debuggerCalls.map((call) => call.action),
+    ['attach'],
+  );
+  assert.equal(chrome.debuggerTabs.has(tab.tabID), true);
+});
+
+test('hover-induced target changes are revalidated before pressing and always detach', async () => {
+  const { browser, chrome, command } = fixture();
+  await browser.run(command('open_tab', { url: 'https://example.com' }));
+  await browser.run(command('read_page'));
+  const execute = chrome.scripting.executeScript;
+  let validations = 0;
+  chrome.scripting.executeScript = async (request) => {
+    if (request.args?.[0]?.snapshotRevision !== undefined && ++validations === 2)
+      throw new Error('Click target moved');
+    return execute(request);
+  };
+  await assert.rejects(browser.run(command('click', { ref: 'e1' })), /moved/);
+  assert.deepEqual(
+    chrome.debuggerCalls.map((call) => call.params?.type || call.action),
+    ['attach', 'mouseMoved', 'detach'],
+  );
+  assert.equal(chrome.debuggerTabs.size, 0);
+});
+
+for (const interrupted of ['cancel', 'disable', 'expire', 'navigate']) {
+  test(`${interrupted} during mouse movement prevents the browser press`, async () => {
+    const { browser, chrome, command } = fixture();
+    const tab = await browser.run(command('open_tab', { url: 'https://example.com' }));
+    await browser.run(command('read_page'));
+    const pending = command('click', { ref: 'e1' });
+    const send = chrome.debugger.sendCommand;
+    chrome.debugger.sendCommand = async (...args) => {
+      await send(...args);
+      if (interrupted === 'cancel') await browser.cancel(pending);
+      if (interrupted === 'disable') await browser.suspend();
+      if (interrupted === 'expire') pending.expiresAt = Date.now() - 1;
+      if (interrupted === 'navigate') browser.documents.delete(tab.tabID);
+    };
+    await assert.rejects(browser.run(pending));
+    assert.deepEqual(
+      chrome.debuggerCalls.map((call) => call.params?.type || call.action),
+      ['attach', 'mouseMoved', 'detach'],
+    );
+    assert.equal(browser.clickingTabs.size, 0);
+  });
+}
+
+test('dispatch failure after a press reports an uncertain outcome and detaches without retrying', async () => {
+  const { browser, chrome, command } = fixture();
+  await browser.run(command('open_tab', { url: 'https://example.com' }));
+  await browser.run(command('read_page'));
+  const send = chrome.debugger.sendCommand;
+  chrome.debugger.sendCommand = async (...args) => {
+    await send(...args);
+    if (args[2].type === 'mouseReleased') throw new Error('Target closed');
+  };
+  await assert.rejects(browser.run(command('click', { ref: 'e1' })), /may already have affected/);
+  assert.equal(
+    chrome.debuggerCalls.filter((call) => call.params?.type === 'mousePressed').length,
+    1,
+  );
+  assert.equal(chrome.debuggerTabs.size, 0);
+});
+
+test('cancellation during attachment detaches without sending mouse input', async () => {
+  const { browser, chrome, command } = fixture();
+  await browser.run(command('open_tab', { url: 'https://example.com' }));
+  await browser.run(command('read_page'));
+  const pending = command('click', { ref: 'e1' });
+  const attach = chrome.debugger.attach;
+  chrome.debugger.attach = async (...args) => {
+    await attach(...args);
+    await browser.cancel(pending);
+  };
+  await assert.rejects(browser.run(pending), /cancelled/);
+  assert.deepEqual(
+    chrome.debuggerCalls.map((call) => call.action),
+    ['attach', 'detach'],
+  );
+});
+
+test('a second click on the same tab cannot interleave browser mouse input', async () => {
+  const { browser, chrome, command } = fixture();
+  await browser.run(command('open_tab', { url: 'https://example.com' }));
+  await browser.run(command('read_page'));
+  const moved = Promise.withResolvers();
+  const resume = Promise.withResolvers();
+  const send = chrome.debugger.sendCommand;
+  chrome.debugger.sendCommand = async (...args) => {
+    await send(...args);
+    if (args[2].type === 'mouseMoved') {
+      moved.resolve();
+      await resume.promise;
+    }
+  };
+  const first = browser.run(command('click', { ref: 'e1' }));
+  await moved.promise;
+  try {
+    await assert.rejects(browser.run(command('click', { ref: 'e1' })), /in progress/);
+  } finally {
+    resume.resolve();
+  }
+  await first;
+  assert.equal(chrome.debuggerCalls.filter((call) => call.action === 'attach').length, 1);
 });

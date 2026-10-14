@@ -24,6 +24,7 @@ The extension cannot reliably determine whether an arbitrary click is destructiv
 - **Session ownership:** browser actions verify both session generation and owned tab ID. Existing personal tabs and other sessions' tabs cannot be targeted through the tools.
 - **No arbitrary page evaluation tool:** model-visible tools are a fixed collection of tab and DOM operations. No shell command, filesystem API, cookie API, or arbitrary JavaScript evaluation is exposed by this MCP server.
 - **Isolated-world execution:** injected content scripts use Chrome's default isolated world, separate from the page's JavaScript globals. Page content is returned as data.
+- **Browser-level clicks:** the worker briefly attaches `chrome.debugger` only to a verified session-owned tab and sends fixed `Input.dispatchMouseEvent` commands. Content scripts hit-test the ref before input and again after mouse movement; stale, disabled, moved, or covered targets fail closed. The worker detaches in cleanup and never exposes arbitrary CDP commands to tools. Input dispatch is not proof of application acceptance.
 - **Credential storage separation:** extension local/session storage is restricted to trusted extension contexts. Injected content scripts cannot read the stored pairing token.
 - **No password values in snapshots:** native password-input values are excluded. This does not guarantee that all secrets on a page are concealed; other inputs, page text and screenshots can contain sensitive data.
 - **Disable control:** disabling access rejects bridge work, invalidates generations, and notifies owned-page content scripts to stop pending interactions.
@@ -48,6 +49,7 @@ The extension cannot reliably determine whether an arbitrary click is destructiv
 7. The token is stored as local data, not encrypted by the extension. POSIX setup uses mode `0600`; on Windows, effective protection comes from the directory's inherited NTFS ACLs. Malicious software running as your user is outside this threat model.
 8. Chrome extensions in an incognito profile or across separate Chrome profiles are not managed by this connection unless separately installed and paired.
 9. Viewport capture uses Chrome's active-tab API. The extension verifies the target before and after capture, but this is a best-effort race check: avoid switching tabs during screenshots. It is not an atomic tab-specific capture API.
+10. The required `debugger` permission is powerful and can access more than mouse input; the extension's implementation limits its use, not the Chrome permission itself. Chrome may show a debugging banner, and DevTools or enterprise policy may block attachment. DOM validation and input dispatch are not atomic: the page may change between them. Cancellation after mouse-down cannot undo a handler or webhook that already ran; inspect state before retrying.
 
 ## Recommended deployment
 
