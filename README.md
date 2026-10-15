@@ -319,24 +319,36 @@ The original manually connected tabs are released from automation. They remain o
 
 Schemas are defined in [`bridge/tools.js`](bridge/tools.js). In the table, `?` means optional; all other arguments are required. `tabID` is an integer, `ref` is a snapshot string such as `e12`, and `url` must be HTTP/HTTPS.
 
-| Tool         | Arguments                                            | Result / behavior                                                                                                                |
-| ------------ | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `open_tab`   | `url?: string`                                       | Create an owned tab; returns `tabID`, `id`, `title`, `url`, `loading`. Omit `url` for `about:blank`.                             |
-| `list_tabs`  | None (`{}`)                                          | Returns `tabs` with `id`, `title`, `url`, `loading`, and optional `currentTabID`.                                                |
-| `focus_tab`  | `tabID?: integer`                                    | Activate the tab and set it as current; returns `tabID` and tab info.                                                            |
-| `close_tab`  | `tabID?: integer`                                    | Close the tab; returns `closed` and optional `currentTabID`.                                                                     |
-| `navigate`   | `url: string`, `tabID?: integer`                     | Returns `tabID`, `url`, `loading: true`; navigation completion is not awaited.                                                   |
-| `read_page`  | `tabID?: integer`                                    | Returns `tabID`, `documentID`, `title`, `url`, `text` (up to 40,000 characters), and `elements` (up to 300 visible controls).    |
-| `click`      | `ref: string`, `tabID?: integer`                     | Hit-tested browser mouse input; returns `tabID`, `dispatched: true`, `applicationAccepted: null`. Verify state with `read_page`. |
-| `type`       | `ref: string`, `text: string`, `tabID?: integer`     | Replace editable text, at most 10,000 characters, and dispatch input/change events; returns `tabID`, `ok`, `url`.                |
-| `select`     | `ref: string`, `value: string`, `tabID?: integer`    | Select a native option by value, at most 2,000 characters; returns `tabID`, `ok`, `url`.                                         |
-| `check`      | `ref: string`, `checked: boolean`, `tabID?: integer` | Set a native checkbox/radio state; returns `tabID`, `ok`, `url`.                                                                 |
-| `scroll`     | `deltaY: integer`, `tabID?: integer`                 | Scroll by −10,000 to 10,000 CSS pixels; positive is down. Returns `tabID`, `scrollY`.                                            |
-| `screenshot` | `tabID?: integer`                                    | Activate the tab and return its viewport as a PNG MCP image.                                                                     |
+| Tool         | Arguments                                                 | Result / behavior                                                                                                                                                                             |
+| ------------ | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `open_tab`   | `url?: string`                                            | Create an owned tab; returns `tabID`, `id`, `title`, `url`, `loading`. Omit `url` for `about:blank`.                                                                                          |
+| `list_tabs`  | None (`{}`)                                               | Returns `tabs` with `id`, `title`, `url`, `loading`, and optional `currentTabID`.                                                                                                             |
+| `focus_tab`  | `tabID?: integer`                                         | Activate the tab and set it as current; returns `tabID` and tab info.                                                                                                                         |
+| `close_tab`  | `tabID?: integer`                                         | Close the tab; returns `closed` and optional `currentTabID`.                                                                                                                                  |
+| `navigate`   | `url: string`, `tabID?: integer`                          | Returns `tabID`, `url`, `loading: true`; navigation completion is not awaited.                                                                                                                |
+| `read_page`  | `tabID?: integer`, `frameID?: integer`                    | Read all accessible frames, or one observed frame. Returns `tabID`, `documentID`, `title`, `url`, `text` (up to 40,000 characters), frame metadata, and up to 300 visible controls per frame. |
+| `click`      | `ref: string`, `tabID?: integer`                          | Hit-tested browser mouse input; returns `tabID`, `dispatched: true`, `applicationAccepted: null`. Verify state with `read_page`.                                                              |
+| `type`       | `ref: string`, `text: string`, `tabID?: integer`          | Replace editable text, at most 10,000 characters, and dispatch input/change events; returns `tabID`, `ok`, `url`.                                                                             |
+| `select`     | `ref: string`, `value: string`, `tabID?: integer`         | Select a native option by value, at most 2,000 characters; returns `tabID`, `ok`, `url`.                                                                                                      |
+| `check`      | `ref: string`, `checked: boolean`, `tabID?: integer`      | Set a native checkbox/radio state; returns `tabID`, `ok`, `url`.                                                                                                                              |
+| `scroll`     | `deltaY: integer`, `tabID?: integer`, `frameID?: integer` | Scroll the main frame or an observed iframe by −10,000 to 10,000 CSS pixels; positive is down. Returns `tabID`, optional `frameID`, `scrollY`.                                                |
+| `screenshot` | `tabID?: integer`                                         | Activate the tab and return its viewport as a PNG MCP image.                                                                                                                                  |
 
 Only `list_tabs` takes no arguments and `open_tab` does not accept a tab ID. All other tools accept optional `tabID`; when omitted, they target this session's current tab. Use the `id` from `list_tabs` as the `tabID` argument. `open_tab`, `focus_tab`, `screenshot`, and newly inherited child tabs update the current tab; targeting a tab for reading or interaction does not.
 
-Snapshot elements contain `ref`, `tag`, `label`, `disabled`, and possibly `type`, `value`, `options`, `checked`, or `href`. Native password-input values are omitted. Text is truncated, and snapshots cover the main frame only; an absent element is not proof that it does not exist elsewhere on the page.
+Snapshot elements contain `ref`, `frameID`, `tag`, `label`, `disabled`, and possibly `type`, `value`, `options`, `checked`, `ariaSelected`, `expanded`, or `href`. Native password-input values are omitted in every frame. Text is truncated; an absent element is not proof that it does not exist elsewhere on the page.
+
+Custom controls with standard interactive ARIA roles are included: multiselect/listbox `option` rows, checkboxes, switches, comboboxes, menu items, tabs, and similar controls. Labels associated with native checkboxes/radios are also clickable, even if the input is visually hidden. Open popup controls are prioritized before background controls at the 300-ref cap in each frame; `totalElements` and `elementsTruncated` report whether the snapshot omitted controls.
+
+For a searchable multiselect, open it, type the query, call `read_page` again, and `click` the matching option's new ref. Use `check` only for native checkbox/radio inputs and `select` only for native `<select>` elements. Verify the filter's trigger/chips or page results after clicking: `ariaSelected` is the raw ARIA state and may describe a command menu's keyboard highlight rather than actual multiselect membership.
+
+### Iframes
+
+By default, `read_page` includes accessible same-origin and cross-origin frames. `frames` lists their IDs, titles, URLs, document IDs, and any reported snapshot errors; the combined `elements` list includes controls from those frames. Main-frame refs retain the form `e12`; iframe refs use `f42:e12`. **Pass the entire returned ref unchanged** to `click`, `type`, `select`, or `check`: it identifies both the frame and the element.
+
+To inspect a particular frame or recover text truncated from the combined snapshot, call `read_page({"tabID": TAB_ID, "frameID": FRAME_ID})`. To scroll it, pass the same `frameID` to `scroll`. Frame IDs must come from a successful snapshot of this owned tab; do not invent them. Reading a single frame refreshes its refs; reading all frames refreshes every returned frame's refs.
+
+Browser-level iframe clicks validate the target inside its own document, translate its point through each containing iframe to the main viewport, and hit-test each ancestor before mouse-down. Nested frames, borders, and positive axis-aligned scaling are supported. Inaccessible/protected frames and unsafe geometry fail closed; rotated, skewed, perspective-transformed, and shadow-root-hosted iframe clicks are not supported. No guessed coordinates or synthetic-click fallback is used.
 
 Non-image results are JSON inside MCP text content. Failures return `isError: true` with an explanatory text message. OpenCode clients may unwrap these results. `documentID` is diagnostic snapshot data; the extension supplies it internally for interactions, so it is not an accepted tool argument.
 
@@ -349,7 +361,7 @@ Tabs opened by links/popups from an owned tab inherit that session's ownership. 
 - The extension requests optional website access once so created tabs can navigate across sites and screenshots work without a toolbar click on each new tab. No cookie-reading permission is requested.
 - The bridge binds only localhost, authenticates HTTP/WebSocket traffic with the pairing token, and requires session metadata for tools.
 - Pairing storage is restricted to trusted extension contexts. Disable, bridge disconnect, and MCP cancellation invalidate pending work and notify content scripts. Actions already completed cannot be undone.
-- Main-frame DOM interactions, browser-level clicks, and viewport screenshots are supported. Cross-origin frames, file uploads, trusted keyboard input, and console/network inspection are not implemented. Typing, native selection, and checkbox-setting still use DOM APIs; some sites reject those synthetic actions. Chrome internal and other protected pages cannot be scripted.
+- DOM interactions and browser-level clicks work in accessible frames of owned tabs; screenshots capture the main viewport, including visible iframe content. File uploads, trusted keyboard input, and console/network inspection are not implemented. Typing, native selection, and checkbox-setting still use DOM APIs; some sites reject those synthetic actions. Chrome internal and other protected pages cannot be scripted.
 
 ## Troubleshooting
 
