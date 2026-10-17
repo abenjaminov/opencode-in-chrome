@@ -3,8 +3,10 @@ import { z } from 'zod';
 function defineBrowserTools() {
   const ref = z
     .string()
-    .regex(/^(?:f\d+:)?e\d+$/)
-    .describe('Element ref from the latest read_page snapshot.');
+    .regex(/^(?:p(?:legacy|[0-9a-f-]{36}):)?(?:f\d+:)?e\d+$/i)
+    .describe(
+      'Complete element ref from read_page. Copy unchanged, including any profile and frame prefixes.',
+    );
   const tabID = z
     .number()
     .int()
@@ -24,15 +26,22 @@ function defineBrowserTools() {
     .describe(
       'Frame ID from read_page.frames. Omit to read all accessible frames, or to scroll the main frame.',
     );
-  return [
+  const profileID = z
+    .string()
+    .max(80)
+    .optional()
+    .describe(
+      'Profile ID from list_profiles. Select explicitly before the first browser action. Include alongside explicit tabID/frameID with multiple profiles. Never guess which account to use.',
+    );
+  const definitions = [
     [
       'open_tab',
-      'Create a new Chrome tab owned by this OpenCode session. No manual tab connection is needed. Uses your Chrome profile’s existing logins. Returns tabID.',
+      "Create a new Chrome tab owned by this conversation in its selected profile, using that profile's existing logins. profileID explicitly selects/switches the conversation profile; never guess an account. Use list_profiles/select_profile first when ambiguous. Returns tabID and profileID.",
       { url: url.optional() },
     ],
     [
       'list_tabs',
-      'List only tabs created by this session, including its current tab. Personal tabs and other sessions’ tabs are excluded.',
+      "List only tabs created by this conversation in its selected profile, including its current tab. Other profiles, personal tabs, and other sessions' tabs are excluded. Results identify profileID.",
       {},
     ],
     ['close_tab', 'Close a tab created by this session.', { tabID }],
@@ -70,6 +79,23 @@ function defineBrowserTools() {
     ['navigate', 'Navigate a session-owned tab to an HTTP or HTTPS URL.', { tabID, url }],
     ['screenshot', 'Capture a session-owned tab’s viewport. This activates the tab.', { tabID }],
   ];
+  return [
+    [
+      'list_profiles',
+      'List opted-in browser profiles with their IDs, labels, connection/enabled state, and this conversation selection. No personal tabs or account identities are read. When multiple profiles exist, ask which profile/account to use before selecting.',
+      {},
+    ],
+    [
+      'select_profile',
+      'Explicitly pin this conversation to a profile ID from list_profiles. This choice survives daemon restarts; disconnected/disabled profiles never fall back to a different account. Switching does not move or adopt tabs. Wait for current browser actions to finish before switching.',
+      { profileID: profileID.unwrap() },
+    ],
+    ...definitions.map(([name, description, schema]) => [
+      name,
+      description,
+      { ...schema, profileID },
+    ]),
+  ];
 }
 
 export const browserToolDefinitions = defineBrowserTools();
@@ -85,7 +111,14 @@ export function registerBrowserTools(server, hub) {
           extra.signal,
         );
         if (name === 'screenshot')
-          return { content: [{ type: 'image', mimeType: 'image/png', data: result.data }] };
+          return {
+            content: [
+              { type: 'image', mimeType: 'image/png', data: result.data },
+              ...(result.profileID
+                ? [{ type: 'text', text: JSON.stringify({ profileID: result.profileID }) }]
+                : []),
+            ],
+          };
         return { content: [{ type: 'text', text: JSON.stringify(result) }] };
       } catch (error) {
         return { isError: true, content: [{ type: 'text', text: error.message }] };

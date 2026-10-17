@@ -36,7 +36,12 @@ test('setup popup enables browser once without conversation selection or side pa
               ? {
                   ready: true,
                   enabled,
-                  settings: { token: 'a'.repeat(64), url: 'http://127.0.0.1:8790' },
+                  settings: {
+                    token: 'a'.repeat(64),
+                    url: 'http://127.0.0.1:8790',
+                    profileName: 'Work',
+                    profileID: 'test-profile',
+                  },
                 }
               : { ok: true },
         };
@@ -51,6 +56,8 @@ test('setup popup enables browser once without conversation selection or side pa
   assert.equal(permissions[0].origins[0], '<all_urls>');
   assert.match(dom.window.document.getElementById('status').textContent, /Ready/);
   assert.ok(calls.some((c) => c.type === 'settings'));
+  assert.equal(calls.find((c) => c.type === 'settings').profileName, 'Work');
+  assert.equal(dom.window.document.getElementById('profile-id').textContent, 'test-profile');
   assert.ok(!calls.some((c) => c.type === 'api' || c.type === 'bind'));
   assert.equal(dom.window.document.querySelector('select'), null);
   dom.window.document.getElementById('disable').click();

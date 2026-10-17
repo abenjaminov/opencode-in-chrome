@@ -1,6 +1,6 @@
 {
   "name": "@asaf-labs/opencode-in-chrome",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "bin": {
     "opencode-in-chrome": "scripts/cli.js"
   },

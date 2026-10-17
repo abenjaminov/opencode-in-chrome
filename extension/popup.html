@@ -9,12 +9,25 @@
     <h1>OpenCode in Chrome</h1>
     <p id="status" role="status">Connecting…</p>
     <p>Once enabled, OpenCode conversations can open and control their own tabs automatically.</p>
+    <p>
+      Opt in separately in each Chrome profile. OpenCode will use the profile you select, with its
+      existing logins.
+    </p>
     <form id="settings-form">
+      <label
+        >Profile name<input
+          id="profile-name"
+          type="text"
+          maxlength="80"
+          placeholder="Work, Personal, Testing…"
+          required
+      /></label>
       <label>Bridge URL<input id="url" type="url" value="http://127.0.0.1:8790" required /></label>
       <label>Pairing token<input id="token" type="password" autocomplete="off" required /></label>
       <button id="enable">Save & enable browser</button>
     </form>
-    <button id="disable">Disable browser access</button>
+    <button id="disable">Disable this profile</button>
+    <p>Profile ID: <code id="profile-id">Not paired yet</code></p>
     <p id="error" role="alert" hidden></p>
     <script type="module" src="popup.js"></script>
   </body>

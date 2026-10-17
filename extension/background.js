@@ -7,6 +7,7 @@ let socket,
 let settings = {};
 let suspended = Promise.resolve();
 let authorized = false;
+let connectionError = '';
 const queues = new Map();
 const commands = new Map();
 const browser = new SessionBrowser(chrome, (message) => {
@@ -24,6 +25,20 @@ const initialized = Promise.all([
   )
   .then(async ([local, session]) => {
     settings = local.settings || {};
+    if (
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        settings.profileID || '',
+      )
+    ) {
+      settings.profileID = crypto.randomUUID();
+      settings.profileName = `Chrome profile ${settings.profileID.slice(0, 6)}`;
+      await chrome.storage.local.set({ settings });
+    }
+    if (settings.profileID !== settings.profileID.toLowerCase() || !settings.profileName) {
+      settings.profileID = settings.profileID.toLowerCase();
+      settings.profileName ||= `Chrome profile ${settings.profileID.slice(0, 6)}`;
+      await chrome.storage.local.set({ settings });
+    }
     browser.enabled = false;
     await browser.restore(session.ownedSessionsV2);
     await browser.suspend();
@@ -57,10 +72,11 @@ function connectSocket() {
     ws.send(
       JSON.stringify({
         type: 'hello',
-        version: 2,
+        version: 3,
         token: settings.token,
         enabled: authorized,
         bindings: browser.bindings,
+        profile: { id: settings.profileID, name: settings.profileName },
       }),
     );
   };
@@ -78,6 +94,13 @@ function connectSocket() {
       return;
     }
     if (message.type === 'ready') {
+      if (message.profileID !== settings.profileID) {
+        connectionError =
+          'Bridge does not support profile opt-in. Restart the updated bridge and reconnect.';
+        ws.close();
+        return;
+      }
+      connectionError = '';
       ready = true;
       browser.enabled = authorized;
       void browser.refreshIndicators();
@@ -120,10 +143,13 @@ function connectSocket() {
       if (command?.sessionID === message.sessionID) void browser.cancel(command);
     }
   };
-  ws.onclose = () => {
+  ws.onclose = (event) => {
     if (socket !== ws) return;
     ready = false;
     authorized = false;
+    if (event?.code === 4009)
+      connectionError =
+        'This profile identity is already connected. Install/pair a fresh extension copy in a cloned Chrome profile.';
     suspended = browser.suspend().catch(() => {});
     clearInterval(heartbeat);
     clearTimeout(retry);
@@ -140,6 +166,7 @@ async function handle(message) {
       enabled: browser.enabled,
       settings,
       sessionCount: Object.keys(browser.bindings).length,
+      connectionError,
     };
   if (message.type === 'settings') {
     const url = new URL(message.url);
@@ -157,7 +184,19 @@ async function handle(message) {
       throw new Error('Enter the pairing token printed by setup.');
     if (!(await chrome.permissions.contains({ origins: ['<all_urls>'] })))
       throw new Error('Website permission is required.');
-    settings = { url: url.origin, token: message.token, enabled: true };
+    const name = message.profileName ?? settings.profileName ?? '';
+    if (typeof name !== 'string') throw new Error('Enter a profile name.');
+    const profileName = name.trim();
+    if (
+      !profileName ||
+      profileName.length > 80 ||
+      [...profileName].some(
+        (character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127,
+      )
+    )
+      throw new Error('Enter a profile name (1–80 characters), for example Work or Personal.');
+    settings = { ...settings, url: url.origin, token: message.token, profileName, enabled: true };
+    connectionError = '';
     ready = false;
     authorized = false;
     socket?.close();

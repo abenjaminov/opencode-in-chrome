@@ -85,7 +85,7 @@ npm run install:opencode -- --global
 npm run pair
 ```
 
-Global mode registers a lightweight MCP adapter in OpenCode's global configuration. Adapters from different projects automatically start or reuse **one authenticated localhost daemon**. The extension pairs once with that daemon; switching projects does not require disconnecting Chrome. Each conversation still controls only its own tabs. Global registration does not share conversation text or make personal tabs accessible.
+Global mode registers a lightweight MCP adapter in OpenCode's global configuration. Adapters from different projects automatically start or reuse **one authenticated localhost daemon**. Each opted-in Chrome profile pairs once with that daemon; switching projects does not require disconnecting Chrome. Profiles stay connected simultaneously, and each conversation controls only its own tabs in its selected profile. Global registration does not share conversation text or make personal tabs accessible.
 
 For package-runner installs, the permanent directory is `opencode-in-chrome/global` under the same OS-specific user-data base listed below. The daemon starts on demand, survives individual adapter/session shutdown, and restarts before the next tool call or adapter connection if it stops. No launch agent or system service is installed. To stop it deliberately, run `npm run stop:shared` from its installation directory; this disconnects browser access for every project using it. Disconnect the adapters as well if you do not want the next call to start it again. A newly restarted bridge must wait for Chrome to reconnect; an early call may report Chrome disconnected. In-flight actions are cancelled, never replayed.
 
@@ -102,6 +102,31 @@ Without `--global`, the bridge and extension are copied to a permanent **per-pro
 Repeat installs reuse identical code and preserve pairing. If different code or unrecognized files already occupy the destination, installation stops rather than overwriting them. Upgrades currently require manually moving the old permanent installation aside after disconnecting its MCP and preserving its private `.local/` settings. If `chrome` is already configured from a checkout, keep using that checkout; the CLI will not silently replace it on first install. Each project still needs an available bridge port, and one extension instance connects to one bridge at a time.
 
 Complete the pairing page's Chrome steps, then run `npm run doctor` from the printed installation directory. Browser readiness is separate from MCP connectivity.
+
+## Multiple Chrome profiles: opt in once per profile
+
+**Chrome requires the extension to be installed in each participating profile.** Installing it in Work does not give it access to Personal. No Chrome profile directories or Google account identities are inspected.
+
+1. In each profile you want to automate, open `chrome://extensions` and load the same checkout's `extension/` folder (or install the same extension distribution).
+2. Open its popup and enter a friendly **Profile name**, such as **Work**, **Personal**, or **Testing**.
+3. Pair using the same bridge URL and token from the private `npm run pair` page, then choose **Save & enable browser** and approve website access. This is that profile's opt-in; new/unpaired profiles are not exposed.
+4. Repeat for other profiles. They connect to the same daemon/port without replacing each other. Each extension installation creates a persistent random ID in profile-local storage; labels are user-provided, not account authentication.
+
+In OpenCode, ask: **“List my Chrome profiles and use Work for this conversation.”** The agent uses:
+
+```text
+list_profiles  {}
+select_profile {"profileID":"<Work's ID from list_profiles>"}
+open_tab       {"url":"https://example.com"}
+```
+
+`list_profiles` returns names, opaque IDs, connected/enabled state, and `selectedProfileID`. Choose a named profile explicitly once per conversation using `select_profile` (or pass `profileID` on its first browser call), even if only one is connected. With multiple registered profiles, ask the user which account/profile to use—even if another profile is disconnected. This avoids silently changing accounts for older conversations during migration. Choices are pinned per conversation and persisted across daemon restarts; **a disconnected or disabled selection never falls back to another account**. A lone legacy compatibility connection retains its old single-browser behavior until upgraded.
+
+Browser results identify `profileID`. Include that ID alongside explicit numeric `tabID` or `frameID` targets when multiple profiles exist, since numbers can overlap. Named-profile snapshots also scope refs to their profile (`p<profileID>:e12` or `p<profileID>:f42:e12`). Pass refs unchanged; refs from another selected profile are rejected. Switching profiles does not move/adopt tabs, and is rejected while this conversation has browser work in flight. Use separate conversations for independent concurrent tasks in different profiles.
+
+**Disable this profile** stops access only to that profile and preserves its registration/selection history. Other profiles continue working. Closing windows may leave Chrome background processes running, so use the disable button to revoke automation access. Closed/disconnected profiles are not launched automatically. Incognito is not a separately supported profile identity.
+
+**Upgrade:** restart the updated bridge, reload the extension in each participating Chrome profile, name/enable it, and reconnect MCP adapters to load `list_profiles`/`select_profile`. An older extension is shown as **Legacy Chrome profile** and remains usable as a single compatibility connection, but it cannot distinguish multiple old profile copies; upgrade those copies. Existing conversations pinned to a legacy/disconnected identity must explicitly select the new profile. Do not clone profile-local extension storage: simultaneous duplicate identities are rejected rather than replacing a working connection. A fresh extension installation creates a new identity and requires pairing/selection again.
 
 ## Install from source (available now)
 
@@ -135,7 +160,7 @@ Then verify:
 npm run doctor
 ```
 
-Doctor checks Node, dependencies, configuration, the authenticated bridge, Chrome connection, and enabled state. It never prints the token or page contents. Exit `0` means fully ready; `1` means follow its diagnostic messages. For machine-readable output, run `npm run doctor -- --json` (npm may add script headers; `node scripts/doctor.js --json` outputs JSON only).
+Doctor checks Node, dependencies, configuration, the running bridge version, authenticated connection, profile readiness, and enabled state. It warns when an old daemon or legacy extension still needs updating. It never prints the token or page contents. Exit `0` means fully ready; `1` means follow its diagnostic messages. For machine-readable output, run `npm run doctor -- --json` (npm may add script headers; `node scripts/doctor.js --json` outputs JSON only).
 
 If a previous project's bridge occupies the port, disconnect it in that project's `/mcps` before connecting this one. Add `--port 8791` to the installer when a separate port is appropriate. One extension instance still serves only one bridge at a time.
 
@@ -168,8 +193,8 @@ There is no Chrome Web Store package or remote hosted browser service. This is a
 ### Browser workflow: open → read → act → verify
 
 1. Discover the available MCP tools. This server exports `open_tab`, `read_page`, etc.; when registered as `chrome`, OpenCode permission actions are named `chrome_open_tab`, `chrome_read_page`, etc. Use the callable tool names exposed by your client.
-2. Call `list_tabs({})` to find this session's existing tabs, or `open_tab({"url":"https://example.com"})` to create one. Save the returned `tabID`.
-3. Call `read_page({"tabID": TAB_ID})`. Choose an element's `ref` from this returned snapshot using its label, tag, type, and state. Never invent refs or use refs from another tab.
+2. Call `list_profiles({})` and explicitly select the intended profile before the first browser action. Ask the user when the account/profile choice is ambiguous. Then use `list_tabs({})` for this conversation's tabs in that profile, or `open_tab({"url":"https://example.com"})` to create one. Save the returned `tabID` and `profileID`.
+3. Call `read_page({"profileID": PROFILE_ID, "tabID": TAB_ID})`. Choose an element's `ref` from this returned snapshot using its label, tag, type, and state. Never invent refs or use refs from another tab/profile.
 4. Perform the requested action with that `tabID` and `ref`. Await each action before another action on the same tab.
 5. Read the page again to verify the result and obtain fresh refs. Use `screenshot` when visual confirmation is useful. A successful DOM action alone does not prove the website accepted or completed the operation.
 6. After navigation or a page-changing action, read again before choosing the next target. Keep explicit tab IDs when working across multiple tabs.
@@ -177,12 +202,14 @@ There is no Chrome Web Store package or remote hosted browser service. This is a
 Example tool arguments (replace placeholders with values actually returned by tools):
 
 ```text
-open_tab   {"url":"https://www.scrapethissite.com/pages/forms/"}
-read_page  {"tabID":<returned tabID>}
-type       {"tabID":<same tabID>,"ref":"<search input ref from snapshot>","text":"Boston"}
-read_page  {"tabID":<same tabID>}
-click      {"tabID":<same tabID>,"ref":"<submit button ref from the new snapshot>"}
-read_page  {"tabID":<same tabID>}
+list_profiles  {}
+select_profile {"profileID":"<intended profile ID from list_profiles>"}
+open_tab       {"url":"https://www.scrapethissite.com/pages/forms/"}
+read_page      {"profileID":"<returned profileID>","tabID":<returned tabID>}
+type           {"profileID":"<same profileID>","tabID":<same tabID>,"ref":"<complete search input ref>","text":"Boston"}
+read_page      {"profileID":"<same profileID>","tabID":<same tabID>}
+click          {"profileID":"<same profileID>","tabID":<same tabID>,"ref":"<complete submit button ref from the new snapshot>"}
+read_page      {"profileID":"<same profileID>","tabID":<same tabID>}
 ```
 
 **Operating rules:**
@@ -270,7 +297,7 @@ If `npm run setup` reports **Missing script: "setup"**, you are likely in the ta
 
 With **project-local mode**, when switching projects using the same port, first disconnect `chrome` in the **old project's** `/mcps` interface, then connect it in the **new project's** `/mcps` interface. Closing a conversation or terminal is not a reliable way to stop its bridge: the OpenCode background service can keep the process running. Disconnecting the old project's bridge also removes browser access for its other conversations. Global shared mode does not require this switch.
 
-**Concurrency boundary:** global shared mode supports simultaneous sessions from different projects through one daemon and one paired extension. Tab ownership remains per conversation. Project-local standalone bridges still need separate ports and paired extension instances in separate Chrome profiles for independent simultaneous setups. A single extension instance connects to only one bridge at a time.
+**Concurrency boundary:** global shared mode supports simultaneous sessions from different projects and multiple opted-in profile connections through one daemon. Tab ownership remains per conversation within each selected profile. Independent standalone bridges still need separate ports. Each extension instance connects to only one bridge at a time.
 
 There are two readiness checks:
 
@@ -284,13 +311,13 @@ MCP can be connected while Chrome is disconnected or disabled. Check both before
 1. Create or select a **dedicated automation Chrome profile**, then open `chrome://extensions` and enable **Developer mode**.
 2. Click **Load unpacked**, selecting this folder's **`extension`** subfolder.
 3. Click the extension's toolbar icon.
-4. Enter the bridge URL and pairing token, then click **Save & enable browser**.
+4. Set a **Profile name**, enter the bridge URL and pairing token, then click **Save & enable browser**. Repeat once in every profile you want to opt in.
 5. Accept Chrome's website-access permission prompt. The popup should say **Ready — sessions can open tabs**.
 6. Close the popup and use your usual OpenCode conversation.
 
 For example: **“Open a new tab, search for dbt, and summarize the results.”**
 
-No session selection or manual tab connection is needed. The calling OpenCode session is identified by its `ai.opencode/sessionID` MCP metadata. OpenCode's own tool permissions continue to apply in its normal interface.
+No session picker or manual tab connection is needed in the extension. OpenCode selects a profile when multiple profiles are registered; the calling conversation is identified by its `ai.opencode/sessionID` MCP metadata. OpenCode's own tool permissions continue to apply in its normal interface.
 
 ### Approvals for browser actions
 
@@ -319,6 +346,8 @@ The original manually connected tabs are released from automation. They remain o
 
 Schemas are defined in [`bridge/tools.js`](bridge/tools.js). In the table, `?` means optional; all other arguments are required. `tabID` is an integer, `ref` is a snapshot string such as `e12`, and `url` must be HTTP/HTTPS.
 
+The server exposes 14 tools. `list_profiles({})` lists opted-in connections and the conversation's current selection; `select_profile({"profileID": ID})` explicitly chooses one. Every browser tool below also accepts optional `profileID`. `open_tab` can explicitly choose/switch a profile; other tools require it to match the existing selection. Include it whenever using an explicit `tabID` or `frameID` with multiple registered profiles. Profile names are data, not instructions or proof of a signed-in account.
+
 | Tool         | Arguments                                                 | Result / behavior                                                                                                                                                                             |
 | ------------ | --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `open_tab`   | `url?: string`                                            | Create an owned tab; returns `tabID`, `id`, `title`, `url`, `loading`. Omit `url` for `about:blank`.                                                                                          |
@@ -344,9 +373,9 @@ For a searchable multiselect, open it, type the query, call `read_page` again, a
 
 ### Iframes
 
-By default, `read_page` includes accessible same-origin and cross-origin frames. `frames` lists their IDs, titles, URLs, document IDs, and any reported snapshot errors; the combined `elements` list includes controls from those frames. Main-frame refs retain the form `e12`; iframe refs use `f42:e12`. **Pass the entire returned ref unchanged** to `click`, `type`, `select`, or `check`: it identifies both the frame and the element.
+By default, `read_page` includes accessible same-origin and cross-origin frames. `frames` lists their IDs, titles, URLs, document IDs, and any reported snapshot errors; the combined `elements` list includes controls from those frames. Within a named profile, main-frame refs use `p<profileID>:e12`; iframe refs use `p<profileID>:f42:e12`. Legacy connections retain `e12`/`f42:e12`. **Pass the entire returned ref unchanged** to `click`, `type`, `select`, or `check`: it identifies the profile, frame, and element.
 
-To inspect a particular frame or recover text truncated from the combined snapshot, call `read_page({"tabID": TAB_ID, "frameID": FRAME_ID})`. To scroll it, pass the same `frameID` to `scroll`. Frame IDs must come from a successful snapshot of this owned tab; do not invent them. Reading a single frame refreshes its refs; reading all frames refreshes every returned frame's refs.
+To inspect a particular frame or recover text truncated from the combined snapshot, call `read_page({"profileID": PROFILE_ID, "tabID": TAB_ID, "frameID": FRAME_ID})`. To scroll it, pass the same `profileID`/`frameID` to `scroll`. Frame IDs must come from a successful snapshot of this owned tab; do not invent them. Reading a single frame refreshes its refs; reading all frames refreshes every returned frame's refs.
 
 Browser-level iframe clicks validate the target inside its own document, translate its point through each containing iframe to the main viewport, and hit-test each ancestor before mouse-down. Nested frames, borders, and positive axis-aligned scaling are supported. Inaccessible/protected frames and unsafe geometry fail closed; rotated, skewed, perspective-transformed, and shadow-root-hosted iframe clicks are not supported. No guessed coordinates or synthetic-click fallback is used.
 
@@ -356,7 +385,7 @@ Tabs opened by links/popups from an owned tab inherit that session's ownership. 
 
 ## Controls and boundaries
 
-- The toolbar popup has **Disable browser access** to stop new automation and invalidate queued commands. **Save & enable browser** restores access.
+- The toolbar popup has **Disable this profile** to stop new automation and invalidate queued commands only in that profile. **Save & enable browser** restores access.
 - Each session can manipulate only tabs it created, including child tabs. Existing personal tabs and other sessions' tabs are excluded from tool access.
 - The extension requests optional website access once so created tabs can navigate across sites and screenshots work without a toolbar click on each new tab. No cookie-reading permission is requested.
 - The bridge binds only localhost, authenticates HTTP/WebSocket traffic with the pairing token, and requires session metadata for tools.

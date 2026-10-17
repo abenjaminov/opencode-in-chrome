@@ -1,10 +1,12 @@
 const $ = (id) => document.getElementById(id);
+let showingConnectionError = false;
 async function request(message) {
   const response = await chrome.runtime.sendMessage(message);
   if (response.error) throw new Error(response.error);
   return response.result;
 }
 function error(error) {
+  showingConnectionError = false;
   $('error').hidden = false;
   $('error').textContent = error.message;
 }
@@ -15,6 +17,13 @@ async function refresh() {
     : state.enabled
       ? '● Ready — sessions can open tabs'
       : '○ Browser access disabled';
+  if (state.connectionError) {
+    error(new Error(state.connectionError));
+    showingConnectionError = true;
+  } else if (showingConnectionError) {
+    $('error').hidden = true;
+    showingConnectionError = false;
+  }
 }
 $('settings-form').onsubmit = async (event) => {
   event.preventDefault();
@@ -23,7 +32,12 @@ $('settings-form').onsubmit = async (event) => {
     const granted = await chrome.permissions.request({ origins: ['<all_urls>'] });
     if (!granted)
       throw new Error('Website permission is needed for browser tools and screenshots.');
-    await request({ type: 'settings', url: $('url').value, token: $('token').value.trim() });
+    await request({
+      type: 'settings',
+      url: $('url').value,
+      token: $('token').value.trim(),
+      profileName: $('profile-name').value.trim(),
+    });
     await refresh();
   } catch (e) {
     error(e);
@@ -41,6 +55,8 @@ try {
   const state = await request({ type: 'state' });
   $('url').value = state.settings.url || 'http://127.0.0.1:8790';
   $('token').value = state.settings.token || '';
+  $('profile-name').value = state.settings.profileName || 'Chrome profile';
+  $('profile-id').textContent = state.settings.profileID || 'Available after pairing';
   await refresh();
 } catch (e) {
   error(e);
