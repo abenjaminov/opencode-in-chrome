@@ -4,29 +4,29 @@
 OpenCode conversation
   └─ MCP stdio (session ID in ai.opencode/sessionID metadata)
       └─ stdio adapter → shared Node daemon, bound to 127.0.0.1
-          └─ authenticated WebSocket /browser, protocol version 2
+          └─ authenticated WebSocket /browser, protocol version 3 per opted-in profile
               └─ Chrome service worker
                   └─ session-owned tabs + isolated-world content scripts
 ```
 
 ## Modules
 
-| Path                           | Responsibility                                                                        |
-| ------------------------------ | ------------------------------------------------------------------------------------- |
-| `bridge/config.js`             | Validate/read/write local credentials; validate setup options                         |
-| `bridge/setup.js`              | Generate credentials and print project-local MCP registration                         |
-| `bridge/main.js`               | Start HTTP and stdio MCP transports; manage process shutdown                          |
-| `bridge/shared-main.js`        | Start/reuse the daemon and expose stdio MCP for each project                          |
-| `bridge/shared-process.js`     | Authenticated daemon discovery, race-safe startup, and port-conflict refusal          |
-| `bridge/shared-client.js`      | Forward validated tool calls and cancellation to the shared daemon                    |
-| `bridge/shared-server.js`      | Authenticated shared tool endpoint, fixed schemas, one BrowserHub, and shutdown       |
-| `bridge/http.js`               | Enforce loopback host/origin/token boundaries and validate handshakes                 |
-| `bridge/hub.js`                | Route sessions, track generations and pending calls, forward cancellation             |
-| `bridge/tools.js`              | Fixed MCP schemas, descriptions, and result conversion                                |
-| `extension/background.js`      | Pairing/settings, authentication lifecycle, per-session command queues, Chrome events |
-| `extension/session-browser.js` | Owned-tab lifecycle, persistence, generation checks, script execution, visual marking |
-| `extension/content.js`         | Page snapshots, scoped element refs, fixed DOM actions, orange overlay/cursor         |
-| `extension/popup.*`            | One-time pairing and global enable/disable controls                                   |
+| Path                           | Responsibility                                                                         |
+| ------------------------------ | -------------------------------------------------------------------------------------- |
+| `bridge/config.js`             | Validate/read/write local credentials; validate setup options                          |
+| `bridge/setup.js`              | Generate credentials and print project-local MCP registration                          |
+| `bridge/main.js`               | Start HTTP and stdio MCP transports; manage process shutdown                           |
+| `bridge/shared-main.js`        | Start/reuse the daemon and expose stdio MCP for each project                           |
+| `bridge/shared-process.js`     | Authenticated daemon discovery, race-safe startup, and port-conflict refusal           |
+| `bridge/shared-client.js`      | Forward validated tool calls and cancellation to the shared daemon                     |
+| `bridge/shared-server.js`      | Authenticated shared tool endpoint, fixed schemas, profile-aware routing, and shutdown |
+| `bridge/http.js`               | Enforce loopback host/origin/token boundaries and validate handshakes                  |
+| `bridge/hub.js`                | Route sessions, track generations and pending calls, forward cancellation              |
+| `bridge/tools.js`              | Fixed MCP schemas, descriptions, and result conversion                                 |
+| `extension/background.js`      | Pairing/settings, authentication lifecycle, per-session command queues, Chrome events  |
+| `extension/session-browser.js` | Owned-tab lifecycle, persistence, generation checks, script execution, visual marking  |
+| `extension/content.js`         | Page snapshots, scoped element refs, fixed DOM actions, orange overlay/cursor          |
+| `extension/popup.*`            | One-time pairing and global enable/disable controls                                    |
 
 There is no build step, arbitrary page-evaluation tool, or conversation UI in the extension.
 
@@ -45,10 +45,12 @@ With `--global`, it registers `bridge/shared-main.js` globally and does not writ
 1. The worker restricts storage to trusted extension contexts and restores session-owned tabs from `chrome.storage.session`. It starts suspended and invalidates old generations.
 2. It connects to the configured loopback URL, rechecks website permission, and sends `hello` with the token, enabled preference, and ownership bindings.
 3. The bridge checks host/origin, authenticates the token, and validates all ownership bindings before replacing a connected browser. It replies `ready`.
-4. Only after `ready` does the worker enable controls. The bridge accepts MCP commands only for protocol version 2 while browser access is enabled.
+4. Only after `ready` echoes the expected profile ID does the worker enable controls. Named profiles use protocol 3 while browser access is enabled; protocol 2 is retained for a single legacy compatibility connection.
 5. Disconnect suspends page controls, changes generations, rejects pending bridge calls, and schedules reconnection. Pairing changes also suspend controls before reconnecting.
 
-The standalone bridge supports one browser connection and one stdio MCP client. In global mode, every project gets a stdio MCP adapter, and all adapters forward authenticated HTTP `/call` requests to one daemon. Concurrent startup attempts rely on exclusive loopback port binding: one daemon wins, and all adapters reuse its authenticated status. A mismatched token, standalone listener, or unrelated process is never terminated or replaced.
+Both modes support multiple authenticated browser-profile connections. In global mode, every project gets a stdio MCP adapter, and all adapters forward authenticated HTTP `/call` requests to one daemon. Concurrent startup attempts rely on exclusive loopback port binding: one daemon wins, and all adapters reuse its authenticated status. A mismatched token, standalone listener, or unrelated process is never terminated or replaced.
+
+`bridge/profiles.js` maintains one `BrowserHub` per profile, isolates socket messages/results, and pins each conversation to a profile. The popup's protocol-3 handshake carries a persistent random profile ID and user label; protocol-2 extensions share one legacy compatibility connection. `bridge/profile-store.js` persists profile labels and conversation selections in the config directory's `profile-routing.json`, using serialized atomic writes and restrictive POSIX permissions. Reconnection of a different profile does not alter an existing selection, and offline/disabled selections never fall back. Commands wait for durable selection state; storage failure blocks actions. Profile selection cannot change during in-flight browser work. Named-profile refs add an outer `p<profileID>:` scope around the existing frame ref, and explicit numeric tab targets require matching profile context when profiles can overlap.
 
 The daemon validates session metadata, fixed tool names and input schemas, and a 128 KiB request-body limit. Closing an adapter does not stop the daemon. Cancelling a call aborts its HTTP request; the response-close event aborts the corresponding BrowserHub action and forwards cancellation to Chrome. There is no automatic action retry. An authenticated `/shutdown` endpoint cancels pending work, closes Chrome, and stops the listener. Each new tool call checks daemon availability before dispatch, and the next call or adapter startup launches a fresh daemon if needed. The extension can restore session-owned bindings on reconnect; an early call fails safely until Chrome connects.
 
@@ -69,8 +71,9 @@ MCP cancellation and timeouts send `cancel` to the worker. Queued work is marked
 ## Persistence and trust
 
 - `.local/config.json`: token and port; ignored by Git.
+- `.local/profile-routing.json`: opted-in profile IDs/labels and durable conversation selections; ignored by Git.
 - `.local/mcp-config.json`: generated machine-specific OpenCode registration; ignored by Git.
-- `chrome.storage.local`: pairing and enabled preference; restricted to trusted contexts.
+- `chrome.storage.local`: pairing, profile identity/name, and enabled preference; restricted to trusted contexts and never synchronized across profiles.
 - `chrome.storage.session`: temporary ownership, current tab, group IDs, and generations; cleared by a Chrome browser restart.
 - Bridge memory: pending requests, routing bindings, and the last 100 activity summaries.
 

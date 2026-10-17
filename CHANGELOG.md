@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add one-time Chrome-profile opt-in, persistent profile names/IDs, simultaneous authenticated connections, and `list_profiles`/`select_profile` tools.
+- Persist conversation profile selections across bridge restarts; never fall back to another account when the selected profile is disconnected or disabled.
+- Namespace element refs by profile and guard numeric tab-ID ambiguity; isolate profile cancellation, disable controls, bindings, and results. Reject simultaneous cloned identities and fail closed on routing-state storage errors.
 - Expose custom multiselect/listbox options, ARIA checkboxes, menu items, and associated checkbox labels as snapshot refs; prioritize open popups at the element cap and report truncation.
 - Add searched-option click regressions for Coupa-style command menus while preserving stale-ref, disabled-target, and covered-target checks.
 - Add frame-scoped snapshots and refs, targeted iframe reading/scrolling, and nested cross-origin iframe actions with validated main-viewport click geometry.

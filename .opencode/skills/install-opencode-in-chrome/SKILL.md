@@ -30,6 +30,14 @@ Register `chrome` MCP in the user's chosen project, help the user complete Chrom
 9. Offer to merge `examples/permissions.jsonc` into existing project permissions for supervised actions. Preserve rule order and explain later-rule/saved-approval effects. Never replace the entire config with the example.
 10. Once ready, perform an authorized public-page smoke action: create a tab, read it, and report the observed result. Use actual MCP tools with OpenCode-supplied session metadata; never fabricate IDs or element refs.
 
+## Multiple profiles
+
+Chrome requires the extension to be installed/loaded separately in each participating regular profile. Use the same bridge URL and private pairing token, set a profile name in each popup, and choose Save & enable browser. New/unpaired profiles are not discoverable. Names and IDs are routing metadata, not proof of account identity.
+
+Use `list_profiles` before account-sensitive browser work. When multiple profiles are registered, ask the user which to use and call `select_profile` with its returned ID. Do not choose another account because the intended profile is disconnected or disabled. Choices survive daemon restarts. Include `profileID` alongside explicit numeric `tabID` when multiple profiles exist, and pass the complete profile-scoped refs from snapshots unchanged. Disabling one profile does not affect the others.
+
+After upgrading, restart the updated daemon, reload/name/enable each extension instance, and reconnect MCP adapters for the new tools. A legacy connection cannot distinguish multiple old profile copies; upgrade each copy. Never clone profile-local extension storage or clear saved routing history as a routine repair.
+
 ## Repairs
 
 - **Missing script: setup:** commands ran in the target application. Run installation/setup from the extension checkout; MCP registration belongs in the target project.
